@@ -1,0 +1,6 @@
+pandas
+torch
+plotly
+numpy
+tqdm
+comet_ml
