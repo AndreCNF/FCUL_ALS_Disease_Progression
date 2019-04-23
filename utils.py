@@ -626,6 +626,8 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
             val_loss = val_loss / len(val_dataloader)
             val_acc = val_acc / len(val_dataloader)
 
+            # [TODO] Also calculate the AUC metric
+
             # Display validation loss
             if step%print_every == 0:
                 print(f'Epoch {epoch} step {step}: Validation loss: {val_loss}; Validation Accuracy: {val_acc}')
@@ -712,6 +714,8 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
         # Calculate the average of the metrics over the batches
         test_loss = test_loss / len(test_dataloader)
         test_acc = test_acc / len(test_dataloader)
+
+        # [TODO] Also calculate the AUC metric
 
         if log_comet_ml:
             # Log metrics to Comet.ml
