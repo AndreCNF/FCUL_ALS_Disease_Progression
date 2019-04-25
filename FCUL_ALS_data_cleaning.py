@@ -15,6 +15,7 @@
 # ---
 
 # # FCUL ALS Data Cleaning
+# ---
 #
 # Exploring the ALS dataset from Faculdade de Ciências da Universidade de Lisboa (FCUL) with the data from over 1000 patients collected in Portugal.
 #
@@ -84,11 +85,15 @@ ALS_proc_df.rename(columns={'REF': 'subject_id'}, inplace=True)
 ALS_proc_df.head()
 
 # ## Deleting unused columns
+#
+# Removing kind of useless columns ('NIV_DATE', 'firstDate', 'lastDate', 'medianDate'), ones with too many missing values ('SNIP', 'CervicalFlex', 'CervicalExt') and ones that would give away the labels ('ALS-FRS', 'ALS-FRS-R', 'ALS-FRSb', 'ALS-FRSsUL', 'ALS-FRSsLL', 'ALS-FRSr').
 
 ALS_proc_df.columns
 
 ALS_proc_df.drop(columns=['NIV_DATE', 'firstDate', 'lastDate', 'medianDate', 
-                          'SNIP', 'CervicalFlex', 'CervicalExt'], inplace=True)
+                          'SNIP', 'CervicalFlex', 'CervicalExt', 'ALS-FRS', 
+                          'ALS-FRS-R', 'ALS-FRSb', 'ALS-FRSsUL', 'ALS-FRSsLL', 
+                          'ALS-FRSr'], inplace=True)
 ALS_proc_df.head()
 
 # ## Getting discrete timestamps
@@ -101,6 +106,9 @@ ALS_proc_df.head(10)
 # ## Cleaning categorical columns
 #
 # Combining redundant values and one hot encoding categorical features.
+
+# Making "Gender" a proper one hot encoded column
+ALS_proc_df['Gender'] = ALS_proc_df['Gender'] - 1
 
 # Fixing a bug in the "1R" column
 ALS_proc_df['1R'] = ALS_proc_df['1R'].replace(to_replace='\\1', value=1).astype('float64')
@@ -137,14 +145,33 @@ ALS_proc_df.columns = [col.lower().replace(' ', '_').replace('-', '_') for col i
 
 ALS_proc_df.head()
 
-# ## Imputation and removal of incomplete data
-
-# +
-# [TODO] Forward fill the values of each column and remove rows that still have missing values 
-# (or replace those remaining missing values with the feature's mean or do a backward fill)
-# -
-
 # ## Normalizing continuous values
 
-# +
-# [TODO] Normalize continuous features to be within a range from 0 to 1 or from -1 to 1
+ALS_proc_df = utils.normalize_data(ALS_proc_df)
+ALS_proc_df.head()
+
+
+ALS_proc_df.describe().transpose()
+
+# ## Imputation and removal of incomplete data
+#
+# Starting from a last information carried forward technique, the data is initially forward filled. Next, a backward fill is done, as current data of the patient should still be a good indicator of the recent past. Finally, the remaining missing values are filled with zeroes, as it represents the average value of each given feature.
+
+ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip']].head(20)
+
+# Forward fill each patient's data
+ALS_proc_df = ALS_proc_df.set_index('subject_id', append=True).groupby('subject_id').fillna(method='ffill').reset_index(level=1)
+
+ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip']].head(20)
+
+# Backward fill each patient's data
+ALS_proc_df = ALS_proc_df.set_index('subject_id', append=True).groupby('subject_id').fillna(method='bfill').reset_index(level=1)
+
+ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip']].head(20)
+
+# Fill remaining missing values with 0, as they represent that feature's average value
+ALS_proc_df = ALS_proc_df.fillna(value=0)
+
+ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip']].head(20)
+
+ALS_proc_df.to_csv(f'{data_path}cleaned/FCUL_ALS_cleaned.csv')

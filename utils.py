@@ -317,47 +317,113 @@ def dataframe_to_padded_tensor(df, seq_len_dict, n_ids, n_inputs, id_column='sub
         raise Exception('ERROR: Unavailable data type. Please choose either NumPy or PyTorch.')
 
 
-def normalize_data(tensor, df, id_columns=['subject_id', 'ts']):
+def normalize_data(df, data=None, id_columns=['subject_id', 'ts'], normalization_method='z-score', columns_to_normalize=None):
     '''Performs data normalization to a continuous valued tensor, to scale to a range between -1 and 1.
 
     Parameters
     ----------
-    tensor : torch.Tensor
-        PyTorch tensor corresponding to a single column which will be normalized 
-        by mean and standard deviation.
     df : pandas.Dataframe
-        Original pandas dataframe which is used to correctly calculate the mean 
-        and standard deviation values used in the normalization. These values
-        can't be calculated from the tensor as it might have been padded with 
-        zeros.
+        Original pandas dataframe which is used to correctly calculate the  
+        necessary statistical values used in the normalization. These values
+        can't be calculated from the tensor as it might have been padded. If
+        the data tensor isn't specified, the normalization is applied directly
+        on the dataframe.
+    data : torch.Tensor, default None
+        PyTorch tensor corresponding to the data which will be normalized
+        by the specified normalization method. If the data tensor isn't 
+        specified, the normalization is applied directly on the dataframe.
     id_columns : list of strings, default ['subject_id', 'ts']
         List of columns names which represent identifier columns. These are not
         supposed to be normalized.
+    normalization_method : string, default 'z-score'
+        Specifies the normalization method used. It can be a z-score
+        normalization, where the data is subtracted of it's mean and divided
+        by the standard deviation, which makes it have zero average and unit
+        variance, much like a standard normal distribution; it can be a 
+        min-max normalization, where the data is subtracted by its minimum
+        value and then divided by the difference between the minimum and the
+        maximum value, getting to a fixed range from 0 to 1.
+    columns_to_normalize : list of strings, default None
+        If specified, the columns provided in the list are the only ones that
+        will be normalized. Otherwise, all non identifier continuous columns
+        will be normalized.
 
     Returns
     -------
-    tensor : torch.Tensor
-        Normalized PyTorch tensor.
+    data : pandas.Dataframe or torch.Tensor
+        Normalized Pandas dataframe or PyTorch tensor.
     '''
-    # Only normalize non identifier continuous columns, ignore one hot encoded ones
-    columns_to_normalize = [col for col in df.columns if col not in list_one_hot_encoded_columns(df) and col not in id_columns]
-    column_means = dict(df[columns_to_normalize].mean())
-    column_stds = dict(df[columns_to_normalize].std())
+    # Check if specific columns have been specified for normalization
+    if columns_to_normalize is None: 
+        # Normalize all non identifier continuous columns, ignore one hot encoded ones
+        columns_to_normalize = [col for col in df.columns if col not in list_one_hot_encoded_columns(df) and col not in id_columns]
+    
+    if type(normalization_method) is not str:
+        raise ValueError('Argument normalization_method should be a string. Available options \
+                         are \'z-score\' and \'min-max\'.')
+    
+    if normalization_method.lower() == 'z-score':
+        column_means = dict(df[columns_to_normalize].mean())
+        column_stds = dict(df[columns_to_normalize].std())
 
-    # Dictionary to convert the the tensor's column indeces into the dataframe's column names
-    idx_to_name = dict(enumerate(df.columns))
+        # Check if the data being normalized is directly the dataframe
+        if data is None:
+            # Treat the dataframe as the data being normalized
+            data = df
+            
+            # Normalize the right columns
+            for col in columns_to_normalize:
+                data[col] = (data[col] - column_means[col]) / column_stds[col]
+        
+        # Otherwise, the tensor is normalized
+        else:
+            # Dictionary to convert the the tensor's column indeces into the dataframe's column names
+            idx_to_name = dict(enumerate(df.columns))
 
-    # Dictionary to convert the dataframe's column names into the tensor's column indeces
-    name_to_idx = dict([(t[1], t[0]) for t in enumerate(df.columns)])
+            # Dictionary to convert the dataframe's column names into the tensor's column indeces
+            name_to_idx = dict([(t[1], t[0]) for t in enumerate(df.columns)])
 
-    # List of indeces of the tensor's columns which are needing normalization
-    tensor_columns_to_normalize = [name_to_idx[name] for name in columns_to_normalize]
+            # List of indeces of the tensor's columns which are needing normalization
+            tensor_columns_to_normalize = [name_to_idx[name] for name in columns_to_normalize]
 
-    # Normalize the right columns
-    for col in tensor_columns_to_normalize:
-        tensor[:, :, col] = (tensor[:, :, col] - column_means[idx_to_name[col]]) / column_stds[idx_to_name[col]]
+            # Normalize the right columns
+            for col in tensor_columns_to_normalize:
+                data[:, :, col] = (data[:, :, col] - column_means[idx_to_name[col]]) / column_stds[idx_to_name[col]]
+                         
+    elif normalization_method.lower() == 'min-max':
+        column_mins = dict(df[columns_to_normalize].min())
+        column_maxs = dict(df[columns_to_normalize].max())
 
-    return tensor
+        # Check if the data being normalized is directly the dataframe
+        if data is None:
+            # Treat the dataframe as the data being normalized
+            data = df
+            
+            # Normalize the right columns
+            for col in columns_to_normalize:
+                data[col] = (data[col] - column_mins[col]) / (column_maxs[col] - column_mins[col])
+        
+        # Otherwise, the tensor is normalized
+        else:
+            # Dictionary to convert the the tensor's column indeces into the dataframe's column names
+            idx_to_name = dict(enumerate(df.columns))
+
+            # Dictionary to convert the dataframe's column names into the tensor's column indeces
+            name_to_idx = dict([(t[1], t[0]) for t in enumerate(df.columns)])
+
+            # List of indeces of the tensor's columns which are needing normalization
+            tensor_columns_to_normalize = [name_to_idx[name] for name in columns_to_normalize]
+
+            # Normalize the right columns
+            for col in tensor_columns_to_normalize:
+                data[:, :, col] = (data[:, :, col] - column_mins[idx_to_name[col]]) / \
+                                  (column_maxs[idx_to_name[col]] - column_mins[idx_to_name[col]])
+                         
+    else:
+        raise ValueError(f'{normalization_method} isn\'t a valid normalization method. Available options \
+                         are \'z-score\' and \'min-max\'.')
+
+    return data
 
 
 def missing_values_imputation(tensor):

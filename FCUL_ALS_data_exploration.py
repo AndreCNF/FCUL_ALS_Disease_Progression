@@ -15,6 +15,7 @@
 # ---
 
 # # FCUL ALS Data Exploration
+# ---
 #
 # Exploring the ALS dataset from Faculdade de Ciências da Universidade de Lisboa (FCUL) with the data from over 1000 patients collected in Portugal.
 #
@@ -75,6 +76,8 @@ def configure_plotly_browser_state():
 
 # ## Exploring the preprocessed dataset
 
+# ### Basic stats
+
 ALS_proc_df = pd.read_csv(f'{data_path}dataWithoutDunnoNIV.csv')
 ALS_proc_df.head()
 
@@ -99,6 +102,120 @@ ALS_proc_df['C9orf72'].value_counts()
 ALS_proc_df['SNIP'].value_counts()
 
 ALS_proc_df['1R'].value_counts()
+
+# ### Plots
+
+# +
+configure_plotly_browser_state()
+
+ALS_proc_gender_count = ALS_proc_df.Gender.value_counts().to_frame()
+data = [go.Pie(labels=ALS_proc_gender_count.index, values=ALS_proc_gender_count.Gender)]
+layout = go.Layout(title='Patients Gender Demographics')
+fig = go.Figure(data, layout)
+py.iplot(fig)
+
+# +
+configure_plotly_browser_state()
+
+ALS_proc_niv_count = ALS_proc_df.NIV.value_counts().to_frame()
+data = [go.Pie(labels=ALS_proc_niv_count.index, values=ALS_proc_niv_count.NIV)]
+layout = go.Layout(title='Visits where the patient is using NIV')
+fig = go.Figure(data, layout)
+py.iplot(fig)
+
+# +
+configure_plotly_browser_state()
+
+data = [go.Histogram(x = ALS_proc_df.NIV)]
+layout = go.Layout(title='Number of visits where the patient is using NIV.')
+fig = go.Figure(data, layout)
+py.iplot(fig)
+
+# +
+configure_plotly_browser_state()
+
+data = [go.Scatter(
+                    x = ALS_proc_df.FVC,
+                    y = ALS_proc_df.NIV,
+                    mode = 'markers'
+                  )]
+layout = go.Layout(
+                    title='Relation between NIV use and FVC values',
+                    xaxis=dict(title='FVC'),
+                    yaxis=dict(title='NIV')
+                  )
+fig = go.Figure(data, layout)
+py.iplot(fig)
+# -
+
+# Average FVC value when NIV is used:
+ALS_proc_df[ALS_proc_df.NIV == 1].FVC.mean()
+
+# **Comments:** The average FVC when NIV is 1 is lower than average, but the scatter plot doesn't show a very clear dependence between the variables.
+
+# +
+configure_plotly_browser_state()
+
+data = [go.Scatter(
+                    x = ALS_proc_df['Disease duration'],
+                    y = ALS_proc_df.NIV,
+                    mode = 'markers'
+                  )]
+layout = go.Layout(
+                    title='Relation between NIV use and disease duration',
+                    xaxis=dict(title='Disease duration'),
+                    yaxis=dict(title='NIV')
+                  )
+fig = go.Figure(data, layout)
+py.iplot(fig)
+# -
+
+# Average disease duration when NIV is used:
+ALS_proc_df[ALS_proc_df.NIV == 1]['Disease duration'].mean()
+
+# +
+configure_plotly_browser_state()
+
+data = [go.Scatter(
+                    x = ALS_proc_df['Age at onset'],
+                    y = ALS_proc_df.NIV,
+                    mode = 'markers'
+                  )]
+layout = go.Layout(
+                    title='Relation between NIV use and age',
+                    xaxis=dict(title='Age at onset'),
+                    yaxis=dict(title='NIV')
+                  )
+fig = go.Figure(data, layout)
+py.iplot(fig)
+# -
+
+# Average age at onset when NIV is used:
+ALS_proc_df[ALS_proc_df.NIV == 1]['Age at onset'].mean()
+
+# +
+configure_plotly_browser_state()
+
+ALS_proc_NIV_3R = ALS_proc_df.groupby(['3R', 'NIV']).REF.count().to_frame().reset_index()
+data = [go.Bar(
+                    x=ALS_proc_NIV_3R[ALS_proc_NIV_3R.NIV == 0]['3R'],
+                    y=ALS_proc_NIV_3R[ALS_proc_NIV_3R.NIV == 0]['REF'],
+                    name='Not used'
+              ),
+        go.Bar(
+                    x=ALS_proc_NIV_3R[ALS_proc_NIV_3R.NIV == 1]['3R'],
+                    y=ALS_proc_NIV_3R[ALS_proc_NIV_3R.NIV == 1]['REF'],
+                    name='Using NIV'
+        )]
+layout = go.Layout(barmode='group')
+fig = go.Figure(data=data, layout=layout)
+py.iplot(fig, filename='grouped-bar')
+# -
+
+# Average 3R value when NIV is used:
+ALS_proc_df[ALS_proc_df.NIV == 1]['3R'].mean()
+
+# **Comments:** Clearly, there's a big dependence of the use of NIV with the respiratory symptoms indicated by 3R, as expected.
 
 # ## Exploring the raw dataset
 
