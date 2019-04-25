@@ -17,23 +17,23 @@ torch.manual_seed(0)
 os.chdir("../..")
 
 # Path to the CSV dataset files
-data_path = 'Datasets/Thesis/PRO-ACT/Cleaned/'
+data_path = 'Datasets/Thesis/FCUL_ALS/cleaned/'
 
 print('Reading the CSV data...')
 
 # Read the cleaned dataset dataframe
-ALS_df = pd.read_csv(f'{data_path}PROACT.csv')
+ALS_df = pd.read_csv(f'{data_path}FCUL_ALS_cleaned.csv')
 
 # Drop the unnamed index column
-ALS_df.drop(columns=['Unnamed: 0', 'index'], inplace=True)
+ALS_df.drop(columns='Unnamed: 0', inplace=True)
 
 # Neural network and dataset parameters
 n_patients = ALS_df.subject_id.nunique()     # Total number of patients
 n_inputs = len(ALS_df.columns)               # Number of input features
-n_hidden = 1052                                 # Number of hidden units
-n_outputs = 1                                   # Number of outputs
-n_layers = 2                                    # Number of LSTM layers
-p_dropout = 0.2                                 # Probability of dropout
+n_hidden = 1052                              # Number of hidden units
+n_outputs = 1                                # Number of outputs
+n_layers = 2                                 # Number of LSTM layers
+p_dropout = 0.2                              # Probability of dropout
 
 print('Building a dictionary containing the sequence length of each patient\'s time series...')
 
@@ -62,23 +62,12 @@ if train_on_gpu:
 
 # Training parameters
 batch_size = 32                                 # Number of patients in a mini batch
-n_epochs = 200                                  # Number of epochs
+n_epochs = 50                                   # Number of epochs
 lr = 0.001                                      # Learning rate
-
-print('Normalizing the data...')
-
-# Normalize the data
-data = utils.normalize_data(data, ALS_df)
-
-print('Performing missing values imputation...')
-
-# Perform missing values imputation
-data = utils.missing_values_imputation(data)
 
 print('Creating a dataset object...')
 
 # Create a Dataset object from the data tensor
-# [TODO] Properly separate the features from the labels
 dataset = Time_Series_Dataset(data, ALS_df)
 
 print('Distributing the data to train, validation and test sets and getting their data loaders...')
@@ -92,7 +81,8 @@ print('Training the model...')
 # Train the model
 model = utils.train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict, batch_size, n_epochs, lr,
                     model_path='GitHub/FCUL_ALS_Disease_Progression/models/', padding_value=padding_value,
-                    do_test=True, log_comet_ml=False, comet_ml_api_key='',
-                    comet_ml_project_name='', comet_ml_workspace='', comet_ml_save_model=True)
+                    do_test=True, log_comet_ml=True, comet_ml_api_key='',
+                    comet_ml_project_name='', comet_ml_workspace='', comet_ml_save_model=True,
+                    features_list=list(ALS_df.columns).remove('niv_label'))
 
 # [TODO] Interpret the model

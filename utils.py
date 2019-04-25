@@ -10,6 +10,7 @@ from tqdm import tqdm                                   # tqdm allows to track c
 from tqdm import tqdm_notebook                          # tqdm allows to track code execution progress
 import numbers                                          # numbers allows to check if data is numeric
 from NeuralNetwork import NeuralNetwork                 # Import the neural network model class
+from sklearn.metrics import roc_auc_score               # ROC AUC model performance metric
 
 # Exceptions
 
@@ -545,7 +546,7 @@ def load_checkpoint(filepath):
 
 def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict, batch_size=32, n_epochs=50, lr=0.001,
           model_path='models/', padding_value=999999, do_test=True, log_comet_ml=False, comet_ml_api_key=None, 
-          comet_ml_project_name=None, comet_ml_workspace=None, comet_ml_save_model=False):
+          comet_ml_project_name=None, comet_ml_workspace=None, comet_ml_save_model=False, features_list=None):
     '''Trains a given model on the provided data.
 
     Parameters
@@ -597,6 +598,10 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
     comet_ml_save_model : bool, default False
         If set to true, uploads the model with the lowest validation loss
         to comet.ml when logging data to the platform.
+    features_list : list of strings, default None
+        Names of the features being used in the current pipeline. This
+        will be logged to comet.ml, if activated, in order to have a 
+        more detailed version control.
 
     Returns
     -------
@@ -616,6 +621,10 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                         "learning_rate": lr}
         experiment.log_parameters(hyper_params)
 
+        if features_list:
+            # Log the names of the features being used
+            experiment.log_other("features_list", features_list)
+
     optimizer = optim.Adam(model.parameters(), lr=lr)                       # Adam optimization algorithm
     step = 0                                                                # Number of iteration steps done so far
     print_every = 10                                                        # Steps interval where the metrics are printed
@@ -626,6 +635,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
         # Initialize the training metrics
         train_loss = 0
         train_acc = 0
+        train_auc = 0
 
         # Loop through the training data
         for features, labels in train_dataloader:
@@ -642,6 +652,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
             features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
             labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
             scores, _ = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
+                                                                            # (the 2 is there to avoid using the identifier features in the predictions)
 
             # Adjust the labels so that it gets the exact same shape as the predictions
             # (i.e. sequence length = max sequence length of the current batch, not the max of all the data)
@@ -657,12 +668,14 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
             mask = (labels <= 1).float()                                    # Create a mask by filtering out all labels that are not a padding value
             n_pred = int(torch.sum(mask).item())                            # Count how many predictions we have
             train_acc += torch.sum(correct_pred.type(torch.FloatTensor)) / n_pred  # Add the training accuracy of the current batch, ignoring all padding values
+            train_auc += roc_auc_score(labels.detach().numpy(), scores.detach().numpy()) # Add the training ROC AUC of the current batch
             step += 1                                                       # Count one more iteration step
             model.eval()                                                    # Deactivate dropout to test the model
 
             # Initialize the validation metrics
             val_loss = 0
             val_acc = 0
+            val_auc = 0
 
             # Loop through the validation data
             for features, labels in val_dataloader:
@@ -675,6 +688,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                     features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
                     labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
                     scores, _ = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
+                                                                                    # (the 2 is there to avoid using the identifier features in the predictions)
 
                     # Adjust the labels so that it gets the exact same shape as the predictions
                     # (i.e. sequence length = max sequence length of the current batch, not the max of all the data)
@@ -687,16 +701,17 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                     mask = (labels <= 1).float()                                    # Create a mask by filtering out all labels that are not a padding value
                     n_pred = int(torch.sum(mask).item())                            # Count how many predictions we have
                     val_acc += torch.sum(correct_pred.type(torch.FloatTensor)) / n_pred  # Add the validation accuracy of the current batch, ignoring all padding values
+                    val_auc += roc_auc_score(labels.numpy(), scores.numpy())        # Add the training ROC AUC of the current batch
 
             # Calculate the average of the metrics over the batches
             val_loss = val_loss / len(val_dataloader)
             val_acc = val_acc / len(val_dataloader)
+            val_auc = val_auc / len(val_dataloader)
 
-            # [TODO] Also calculate the AUC metric
 
             # Display validation loss
             if step%print_every == 0:
-                print(f'Epoch {epoch} step {step}: Validation loss: {val_loss}; Validation Accuracy: {val_acc}')
+                print(f'Epoch {epoch} step {step}: Validation loss: {val_loss}; Validation Accuracy: {val_acc}; Validation AUC: {val_auc}')
 
             # Check if the performance obtained in the validation set is the best so far (lowest loss value)
             if val_loss < val_loss_min:
@@ -729,13 +744,16 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
         # Calculate the average of the metrics over the epoch
         train_loss = train_loss / len(train_dataloader)
         train_acc = train_acc / len(train_dataloader)
+        train_auc = train_auc / len(train_dataloader)
 
         if log_comet_ml:
             # Log metrics to Comet.ml
             experiment.log_metric("train_loss", train_loss, step=epoch)
             experiment.log_metric("train_acc", train_acc, step=epoch)
+            experiment.log_metric("train_auc", train_auc, step=epoch)
             experiment.log_metric("val_loss", val_loss, step=epoch)
             experiment.log_metric("val_acc", val_acc, step=epoch)
+            experiment.log_metric("val_auc", val_auc, step=epoch)
             experiment.log_metric("epoch", epoch)
         
         # Print a report of the epoch
@@ -752,6 +770,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
         # Initialize the test metrics
         test_loss = 0
         test_acc = 0
+        test_auc = 0
 
         # Evaluate the model on the test set
         for features, labels in test_dataloader:
@@ -764,6 +783,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                 features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
                 labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
                 scores, _ = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
+                                                                                # (the 2 is there to avoid using the identifier features in the predictions)
 
                 # Adjust the labels so that it gets the exact same shape as the predictions
                 # (i.e. sequence length = max sequence length of the current batch, not the max of all the data)
@@ -776,17 +796,18 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                 mask = (labels <= 1).float()                                    # Create a mask by filtering out all labels that are not a padding value
                 n_pred = int(torch.sum(mask).item())                            # Count how many predictions we have
                 test_acc += torch.sum(correct_pred.type(torch.FloatTensor)) / n_pred  # Add the test accuracy of the current batch, ignoring all padding values
+                test_auc += roc_auc_score(labels.numpy(), scores.numpy())       # Add the training ROC AUC of the current batch
 
         # Calculate the average of the metrics over the batches
         test_loss = test_loss / len(test_dataloader)
         test_acc = test_acc / len(test_dataloader)
-
-        # [TODO] Also calculate the AUC metric
+        test_auc = test_auc / len(test_dataloader)
 
         if log_comet_ml:
             # Log metrics to Comet.ml
-            experiment.log_metric("test_loss", test_loss, step=step)
-            experiment.log_metric("test_acc", test_acc, step=step)
+            experiment.log_metric("test_loss", test_loss)
+            experiment.log_metric("test_acc", test_acc)
+            experiment.log_metric("test_auc", test_auc)
     
     if log_comet_ml:
         # Only report that the experiment completed successfully if it finished the training without errors

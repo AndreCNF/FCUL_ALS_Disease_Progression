@@ -145,6 +145,18 @@ ALS_proc_df.columns = [col.lower().replace(' ', '_').replace('-', '_') for col i
 
 ALS_proc_df.head()
 
+# ## NIV label
+#
+# In order to predict the use of NIV in the next 3 months, we need to create a shifted version of the "niv" column.
+
+ALS_proc_df['niv_label'] = ALS_proc_df['niv']
+
+ALS_proc_df[['subject_id', 'ts', 'niv', 'niv_label']].head(20)
+
+ALS_proc_df['niv_label'] = ALS_proc_df.groupby('subject_id')['niv_label'].shift(-1)
+
+ALS_proc_df[['subject_id', 'ts', 'niv', 'niv_label']].head(20)
+
 # ## Normalizing continuous values
 
 ALS_proc_df = utils.normalize_data(ALS_proc_df)
@@ -157,21 +169,21 @@ ALS_proc_df.describe().transpose()
 #
 # Starting from a last information carried forward technique, the data is initially forward filled. Next, a backward fill is done, as current data of the patient should still be a good indicator of the recent past. Finally, the remaining missing values are filled with zeroes, as it represents the average value of each given feature.
 
-ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip']].head(20)
+ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'niv_label']].head(20)
 
 # Forward fill each patient's data
 ALS_proc_df = ALS_proc_df.set_index('subject_id', append=True).groupby('subject_id').fillna(method='ffill').reset_index(level=1)
 
-ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip']].head(20)
+ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'niv_label']].head(20)
 
 # Backward fill each patient's data
 ALS_proc_df = ALS_proc_df.set_index('subject_id', append=True).groupby('subject_id').fillna(method='bfill').reset_index(level=1)
 
-ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip']].head(20)
+ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'niv_label']].head(20)
 
 # Fill remaining missing values with 0, as they represent that feature's average value
 ALS_proc_df = ALS_proc_df.fillna(value=0)
 
-ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip']].head(20)
+ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'niv_label']].head(20)
 
 ALS_proc_df.to_csv(f'{data_path}cleaned/FCUL_ALS_cleaned.csv')

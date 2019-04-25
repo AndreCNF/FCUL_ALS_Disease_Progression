@@ -1,13 +1,14 @@
 from torch.utils.data import Dataset
 
 class Time_Series_Dataset(Dataset):
-    def __init__(self, arr, df):
+    def __init__(self, arr, df, label_name=None):
         # Counter that indicates in which column where in when searching for the label column
         col_num = 0
         for col in df.columns:
-            if 'label' in col:
+            if 'label' in col or col == label_name:
                 # Column number corresponding to the label
                 self.label_column = col_num
+                break
             col_num += 1
         # Column numbers corresponding to the features
         self.features_columns = list(range(self.label_column)) + list(range(self.label_column + 1, arr.shape[2]))
