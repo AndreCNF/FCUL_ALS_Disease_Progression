@@ -103,6 +103,24 @@ ALS_proc_df.head()
 ALS_proc_df['ts'] = ALS_proc_df.groupby('subject_id').cumcount()
 ALS_proc_df.head(10)
 
+# ## Removing patients with only one clinical visit
+#
+# Since we want to predict the use of NIV in the next clinical visit, it doesn't make any sense to include patients with only one data point.
+
+ALS_proc_df.subject_id.nunique()
+
+ALS_proc_df.groupby('subject_id').ts.count().min()
+
+for patient in ALS_proc_df.subject_id.unique():
+    # Check if the current patient only has one clinical visit
+    if len(ALS_proc_df[ALS_proc_df.subject_id == patient]) == 1:
+        # Remove patient's data from the dataframe
+        ALS_proc_df = ALS_proc_df[ALS_proc_df.subject_id != patient]
+
+ALS_proc_df.subject_id.nunique()
+
+ALS_proc_df.groupby('subject_id').ts.count().min()
+
 # ## Cleaning categorical columns
 #
 # Combining redundant values and one hot encoding categorical features.

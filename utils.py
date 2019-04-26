@@ -621,7 +621,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                         "learning_rate": lr}
         experiment.log_parameters(hyper_params)
 
-        if features_list:
+        if features_list is not None:
             # Log the names of the features being used
             experiment.log_other("features_list", features_list)
 
@@ -663,12 +663,13 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
             loss.backward()                                                 # Backpropagate the loss
             optimizer.step()                                                # Update the model's weights
             train_loss += loss                                              # Add the training loss of the current batch
-            pred = torch.round(scores)                                      # Get the predictions
-            correct_pred = pred == labels.contiguous().view_as(pred)        # Get the correct predictions
-            mask = (labels <= 1).float()                                    # Create a mask by filtering out all labels that are not a padding value
-            n_pred = int(torch.sum(mask).item())                            # Count how many predictions we have
-            train_acc += torch.sum(correct_pred.type(torch.FloatTensor)) / n_pred  # Add the training accuracy of the current batch, ignoring all padding values
-            train_auc += roc_auc_score(labels.detach().numpy(), scores.detach().numpy()) # Add the training ROC AUC of the current batch
+            mask = (labels <= 1).view_as(scores).float()                    # Create a mask by filtering out all labels that are not a padding value
+            unpadded_labels = torch.masked_select(labels.contiguous().view_as(scores), mask.byte()) # Completely remove the padded values from the labels using the mask
+            unpadded_scores = torch.masked_select(scores, mask.byte())      # Completely remove the padded values from the scores using the mask
+            pred = torch.round(unpadded_scores)                             # Get the predictions
+            correct_pred = pred == unpadded_labels                          # Get the correct predictions
+            train_acc += torch.mean(correct_pred.type(torch.FloatTensor))   # Add the training accuracy of the current batch, ignoring all padding values
+            train_auc += roc_auc_score(unpadded_labels.numpy(), unpadded_scores.detach().numpy()) # Add the training ROC AUC of the current batch
             step += 1                                                       # Count one more iteration step
             model.eval()                                                    # Deactivate dropout to test the model
 
@@ -696,12 +697,13 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                     labels, _ = torch.nn.utils.rnn.pad_packed_sequence(labels, batch_first=True, padding_value=padding_value)
             
                     val_loss += model.loss(scores, labels, x_lengths)               # Calculate and add the validation loss of the current batch
-                    pred = torch.round(scores)                                      # Get the predictions
-                    correct_pred = pred == labels.contiguous().view_as(pred)        # Get the correct predictions
-                    mask = (labels <= 1).float()                                    # Create a mask by filtering out all labels that are not a padding value
-                    n_pred = int(torch.sum(mask).item())                            # Count how many predictions we have
-                    val_acc += torch.sum(correct_pred.type(torch.FloatTensor)) / n_pred  # Add the validation accuracy of the current batch, ignoring all padding values
-                    val_auc += roc_auc_score(labels.numpy(), scores.numpy())        # Add the training ROC AUC of the current batch
+                    mask = (labels <= 1).view_as(scores).float()                    # Create a mask by filtering out all labels that are not a padding value
+                    unpadded_labels = torch.masked_select(labels.contiguous().view_as(scores), mask.byte()) # Completely remove the padded values from the labels using the mask
+                    unpadded_scores = torch.masked_select(scores, mask.byte())      # Completely remove the padded values from the scores using the mask
+                    pred = torch.round(unpadded_scores)                             # Get the predictions
+                    correct_pred = pred == unpadded_labels                          # Get the correct predictions
+                    val_acc += torch.mean(correct_pred.type(torch.FloatTensor))     # Add the validation accuracy of the current batch, ignoring all padding values
+                    val_auc += roc_auc_score(unpadded_labels.numpy(), unpadded_scores.detach().numpy()) # Add the validation ROC AUC of the current batch
 
             # Calculate the average of the metrics over the batches
             val_loss = val_loss / len(val_dataloader)
@@ -757,8 +759,8 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
             experiment.log_metric("epoch", epoch)
         
         # Print a report of the epoch
-        print(f'Epoch {epoch}: Training loss: {train_loss}; Training Accuracy: {train_acc}; \
-                Validation loss: {val_loss}; Validation Accuracy: {val_acc}')
+        print(f'Epoch {epoch}: Training loss: {train_loss}; Training Accuracy: {train_acc}; Training AUC: {train_auc}; \
+                Validation loss: {val_loss}; Validation Accuracy: {val_acc}; Validation AUC: {val_auc}')
         print('----------------------')
 
     if do_test:
@@ -791,12 +793,13 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                 labels, _ = torch.nn.utils.rnn.pad_packed_sequence(labels, batch_first=True, padding_value=padding_value)
         
                 test_loss += model.loss(scores, labels, x_lengths)              # Calculate and add the validation loss of the current batch
-                pred = torch.round(scores)                                      # Get the predictions
-                correct_pred = pred == labels.contiguous().view_as(pred)        # Get the correct predictions
-                mask = (labels <= 1).float()                                    # Create a mask by filtering out all labels that are not a padding value
-                n_pred = int(torch.sum(mask).item())                            # Count how many predictions we have
-                test_acc += torch.sum(correct_pred.type(torch.FloatTensor)) / n_pred  # Add the test accuracy of the current batch, ignoring all padding values
-                test_auc += roc_auc_score(labels.numpy(), scores.numpy())       # Add the training ROC AUC of the current batch
+                mask = (labels <= 1).view_as(scores).float()                    # Create a mask by filtering out all labels that are not a padding value
+                unpadded_labels = torch.masked_select(labels.contiguous().view_as(scores), mask.byte()) # Completely remove the padded values from the labels using the mask
+                unpadded_scores = torch.masked_select(scores, mask.byte())      # Completely remove the padded values from the scores using the mask
+                pred = torch.round(unpadded_scores)                             # Get the predictions
+                correct_pred = pred == unpadded_labels                          # Get the correct predictions
+                test_acc += torch.mean(correct_pred.type(torch.FloatTensor))    # Add the test accuracy of the current batch, ignoring all padding values
+                test_auc += roc_auc_score(unpadded_labels.numpy(), unpadded_scores.detach().numpy()) # Add the test ROC AUC of the current batch
 
         # Calculate the average of the metrics over the batches
         test_loss = test_loss / len(test_dataloader)
