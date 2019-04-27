@@ -5,3 +5,4 @@ numpy
 tqdm
 comet_ml
 scikit-learn
+shap
