@@ -9,9 +9,9 @@ from NeuralNetwork import NeuralNetwork                 # Import the neural netw
 import utils                                            # Contains auxiliary functions
 from Time_Series_Dataset import Time_Series_Dataset     # Dataset subclass which allows the creation of Dataset objects
 
-# Set random seed to 0
-np.random.seed(0)
-torch.manual_seed(0)
+# Set random seed to the specified value
+np.random.seed(utils.random_seed)
+torch.manual_seed(utils.random_seed)
 
 # Change to parent directory (presumably "Documents")
 os.chdir("../..")

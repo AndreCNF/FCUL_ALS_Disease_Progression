@@ -14,3 +14,4 @@ __pycache__/utils.cpython-37.pyc
 *.pyc
 .DS_Store
 .vscode/launch.json
+*.pth

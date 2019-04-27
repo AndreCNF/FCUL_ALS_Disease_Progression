@@ -73,7 +73,7 @@ class NeuralNetwork(nn.Module):
             # Add a column to the predictions tensor with the probability of not being part of the
             # class being used
             y_pred_other_class = 1 - y_pred
-            y_pred = torch.stack([y_pred, y_pred_other_class]).permute(1, 0, 2).squeeze()
+            y_pred = torch.stack([y_pred_other_class, y_pred]).permute(1, 0, 2).squeeze()
 
         # Pick the values for the label and zero out the rest with the mask
         y_pred = y_pred[range(y_pred.shape[0]), y_labels * mask.long()] * mask

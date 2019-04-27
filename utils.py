@@ -12,6 +12,13 @@ import numbers                                          # numbers allows to chec
 from NeuralNetwork import NeuralNetwork                 # Import the neural network model class
 from sklearn.metrics import roc_auc_score               # ROC AUC model performance metric
 
+# Random seed used in PyTorch and NumPy's random operations (such as weight initialization)
+random_seed = 0
+
+# Set random seed to the specified value
+np.random.seed(random_seed)
+torch.manual_seed(random_seed)
+
 # Exceptions
 
 class ColumnNotFoundError(Exception):
@@ -612,6 +619,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
         # Create a Comet.ml experiment
         experiment = Experiment(api_key=comet_ml_api_key, project_name=comet_ml_project_name, workspace=comet_ml_workspace)
         experiment.log_other("completed", False)
+        experiment.log_other("random_seed", random_seed)
 
         # Report hyperparameters to Comet.ml
         hyper_params = {"batch_size": batch_size,
@@ -696,6 +704,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                     labels = torch.nn.utils.rnn.pack_padded_sequence(labels, x_lengths, batch_first=True)  
                     labels, _ = torch.nn.utils.rnn.pad_packed_sequence(labels, batch_first=True, padding_value=padding_value)
             
+                    # [TODO] Clip gradients to avoid exploding gradient
                     val_loss += model.loss(scores, labels, x_lengths)               # Calculate and add the validation loss of the current batch
                     mask = (labels <= 1).view_as(scores).float()                    # Create a mask by filtering out all labels that are not a padding value
                     unpadded_labels = torch.masked_select(labels.contiguous().view_as(scores), mask.byte()) # Completely remove the padded values from the labels using the mask
@@ -776,7 +785,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
 
         # Evaluate the model on the test set
         for features, labels in test_dataloader:
-            # Turn off gradients for validation, saves memory and computations
+            # Turn off gradients for test, saves memory and computations
             with torch.no_grad():
                 features, labels = features.float(), labels.float()             # Make the data have type float instead of double, as it would cause problems
                 x_lengths = [seq_len_dict[patient] for patient in list(features[:, 0, 0].numpy())]  # Get the original lengths of the sequences
@@ -792,7 +801,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                 labels = torch.nn.utils.rnn.pack_padded_sequence(labels, x_lengths, batch_first=True)  
                 labels, _ = torch.nn.utils.rnn.pad_packed_sequence(labels, batch_first=True, padding_value=padding_value)
         
-                test_loss += model.loss(scores, labels, x_lengths)              # Calculate and add the validation loss of the current batch
+                test_loss += model.loss(scores, labels, x_lengths)              # Calculate and add the test loss of the current batch
                 mask = (labels <= 1).view_as(scores).float()                    # Create a mask by filtering out all labels that are not a padding value
                 unpadded_labels = torch.masked_select(labels.contiguous().view_as(scores), mask.byte()) # Completely remove the padded values from the labels using the mask
                 unpadded_scores = torch.masked_select(scores, mask.byte())      # Completely remove the padded values from the scores using the mask
