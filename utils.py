@@ -659,7 +659,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
             x_lengths = [x_lengths[idx] for idx in data_sorted_idx]         # Sort the x_lengths array by descending sequence length
             features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
             labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
-            scores, _ = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
+            scores, _ = model.forward(features[:, :, 2:], x_lengths, SHAP_explainer=False)        # Feedforward the data through the model
                                                                             # (the 2 is there to avoid using the identifier features in the predictions)
 
             # Adjust the labels so that it gets the exact same shape as the predictions
@@ -696,7 +696,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                     x_lengths = [x_lengths[idx] for idx in data_sorted_idx]         # Sort the x_lengths array by descending sequence length
                     features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
                     labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
-                    scores, _ = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
+                    scores, _ = model.forward(features[:, :, 2:], x_lengths, SHAP_explainer=False)        # Feedforward the data through the model
                                                                                     # (the 2 is there to avoid using the identifier features in the predictions)
 
                     # Adjust the labels so that it gets the exact same shape as the predictions
@@ -793,7 +793,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                 x_lengths = [x_lengths[idx] for idx in data_sorted_idx]         # Sort the x_lengths array by descending sequence length
                 features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
                 labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
-                scores, _ = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
+                scores, _ = model.forward(features[:, :, 2:], x_lengths, SHAP_explainer=False)        # Feedforward the data through the model
                                                                                 # (the 2 is there to avoid using the identifier features in the predictions)
 
                 # Adjust the labels so that it gets the exact same shape as the predictions

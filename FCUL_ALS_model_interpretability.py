@@ -37,6 +37,9 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import utils                     # Contains auxiliary functions
 from Time_Series_Dataset import Time_Series_Dataset # Dataset subclass which allows the creation of Dataset objects
 import shap                      # Model-agnostic interpretability package inspired on Shapley values
+# -
+
+import pixiedust
 
 # +
 # Change to parent directory (presumably "Documents")
@@ -88,6 +91,17 @@ ALS_df.head()
 ALS_df.drop(columns='Unnamed: 0', inplace=True)
 ALS_df.head()
 
+# +
+# List of used features
+ALS_cols = list(ALS_df.columns)
+
+# Remove features that aren't used by the model to predict the label
+for unused_feature in ['subject_id', 'ts', 'niv_label']:
+    ALS_cols.remove(unused_feature)
+# -
+
+ALS_cols
+
 # Load the model with the best validation performance
 model = utils.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_26_04_2019_23_36.pth')
 
@@ -115,17 +129,19 @@ dataset = Time_Series_Dataset(data, ALS_df)
 train_dataloader, val_dataloader, test_dataloader, \
 train_indices, val_indices, test_indices            = utils.create_train_sets(dataset, test_train_ratio=0.2, 
                                                                               validation_ratio=0.1, 
-                                                                              batch_size=1, get_indeces=True)
+                                                                              batch_size=100, get_indeces=True)
 
 # Get the tensor data of the training and test sets
-train_data = data[train_indices]
-test_data = data[test_indices]
+# train_data = data[train_indices]
+# test_data = data[test_indices]
+train_features, train_labels = next(iter(train_dataloader))
+test_features, test_labels = next(iter(test_dataloader))
 
 # ## SHAP
 
 # +
 # Get the original lengths of the sequences, for the training data
-x_lengths_train = [seq_len_dict[patient] for patient in list(train_data[:100, 0, 0].numpy())]
+x_lengths_train = [seq_len_dict[patient] for patient in list(train_features[:100, 0, 0].numpy())]
 
 # Sorted indeces to get the data sorted by sequence length
 data_sorted_idx = list(np.argsort(x_lengths_train)[::-1])
@@ -134,11 +150,11 @@ data_sorted_idx = list(np.argsort(x_lengths_train)[::-1])
 x_lengths_train = [x_lengths_train[idx] for idx in data_sorted_idx]
 
 # Sort the features by descending sequence length
-train_data_exp = train_data[data_sorted_idx, :, :]
+train_data_exp = train_features[data_sorted_idx, :, :]
 
 # +
 # Get the original lengths of the sequences, for the test data
-x_lengths_test = [seq_len_dict[patient] for patient in list(test_data[:10, 0, 0].numpy())]
+x_lengths_test = [seq_len_dict[patient] for patient in list(test_features[:10, 0, 0].numpy())]
 
 # Sorted indeces to get the data sorted by sequence length
 data_sorted_idx = list(np.argsort(x_lengths_test)[::-1])
@@ -147,15 +163,22 @@ data_sorted_idx = list(np.argsort(x_lengths_test)[::-1])
 x_lengths_test = [x_lengths_test[idx] for idx in data_sorted_idx]
 
 # Sort the features by descending sequence length
-test_data_exp = test_data[data_sorted_idx, :, :]
+test_data_exp = test_features[data_sorted_idx, :, :]
 
-# +
+# + {"pixiedust": {"displayParams": {}}}
 # Use the first 100 training examples as our background dataset to integrate over
 # (Ignoring the first 2 features, as they constitute the identifiers 'subject_id' and 'ts')
-explainer = shap.DeepExplainer(model, [train_data_exp[:, :, 2:], x_lengths_train])
+explainer = shap.DeepExplainer(model, train_data_exp[:, :, 2:].float())
 
+# + {"pixiedust": {"displayParams": {}}}
 # Explain the first 10 predictions
-shap_values = explainer.shap_values([test_data_exp[:, :, 2:], x_lengths_test])
+# shap_values = explainer.shap_values([test_data_exp[:10, :, 2:], x_lengths_test])
+shap_values = explainer.shap_values(test_data_exp[:10, :, 2:].float())
+# -
+
+shap_values.shape
+
+shap.force_plot?
 
 # +
 # init the JS visualization code
@@ -163,4 +186,9 @@ shap.initjs()
 
 # plot the explanation of the first prediction
 # Note the model is "multi-output" because it is rank-2 but only has one column
-shap.force_plot(explainer.expected_value[0], shap_values[0][0], x_test_words[0])
+shap.force_plot(0, shap_values[0][0], feature_names=ALS_cols)
+# -
+
+explainer.expected_value[0]
+
+

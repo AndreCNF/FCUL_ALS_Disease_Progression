@@ -1,4 +1,3 @@
-from comet_ml import Experiment                         # Comet.ml can log training metrics, parameters and do version control
 import torch                                            # PyTorch to create and apply deep learning models
 from torch import nn, optim                             # nn for neural network layers and optim for training optimizers
 import pandas as pd                                     # Pandas to handle the data in dataframes
@@ -73,7 +72,7 @@ dataset = Time_Series_Dataset(data, ALS_df)
 print('Distributing the data to train, validation and test sets and getting their data loaders...')
 
 # Get the train, validation and test sets data loaders, which will allow loading batches
-train_dataloader, val_dataloader, test_dataloader = utils.create_train_sets(dataset, test_train_ratio=0.2, validation_ratio=0.1, 
+train_dataloader, val_dataloader, test_dataloader = utils.create_train_sets(dataset, test_train_ratio=0.2, validation_ratio=0.1,
                                                                             batch_size=batch_size, get_indeces=False)
 
 print('Training the model...')
@@ -81,7 +80,7 @@ print('Training the model...')
 # Train the model
 model = utils.train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict, batch_size, n_epochs, lr,
                     model_path='GitHub/FCUL_ALS_Disease_Progression/models/', padding_value=padding_value,
-                    do_test=True, log_comet_ml=True, comet_ml_api_key='',
+                    do_test=True, log_comet_ml=False, comet_ml_api_key='',
                     comet_ml_project_name='', comet_ml_workspace='', comet_ml_save_model=True,
                     features_list=list(ALS_df.columns).remove('niv_label'))
 

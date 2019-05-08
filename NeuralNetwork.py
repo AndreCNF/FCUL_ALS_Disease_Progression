@@ -21,7 +21,7 @@ class NeuralNetwork(nn.Module):
         # Dropout used between the last LSTM layer and the fully connected layer
         self.dropout = nn.Dropout(p=self.p_dropout)
 
-    def forward(self, x, x_lengths):
+    def forward(self, x, x_lengths=None, SHAP_explainer=True):
         # Get the batch size (might not be always the same)
         batch_size = x.shape[0]
 
@@ -29,14 +29,18 @@ class NeuralNetwork(nn.Module):
         # a new batch as a continuation of a sequence.
         self.hidden = self.init_hidden(batch_size)
 
-        # pack_padded_sequence so that padded items in the sequence won't be shown to the LSTM
-        x = torch.nn.utils.rnn.pack_padded_sequence(x, x_lengths, batch_first=True)
+        if SHAP_explainer:
+            # Get the outputs and hidden states from the LSTM layer(s)
+            lstm_output, self.hidden = self.lstm(x, self.hidden)
+        else:
+            # pack_padded_sequence so that padded items in the sequence won't be shown to the LSTM
+            x = torch.nn.utils.rnn.pack_padded_sequence(x, x_lengths, batch_first=True)
 
-        # Get the outputs and hidden states from the LSTM layer(s)
-        lstm_output, self.hidden = self.lstm(x, self.hidden)
+            # Get the outputs and hidden states from the LSTM layer(s)
+            lstm_output, self.hidden = self.lstm(x, self.hidden)
 
-        # Undo the packing operation
-        lstm_output, _ = torch.nn.utils.rnn.pad_packed_sequence(lstm_output, batch_first=True)
+            # Undo the packing operation
+            lstm_output, _ = torch.nn.utils.rnn.pad_packed_sequence(lstm_output, batch_first=True)
 
         # Apply dropout to the last LSTM layer
         lstm_output = self.dropout(lstm_output)
@@ -47,7 +51,10 @@ class NeuralNetwork(nn.Module):
         # Classification scores after applying the fully connected layers and softmax
         output = torch.sigmoid(self.fc(flat_lstm_output))
 
-        return output, self.hidden
+        if SHAP_explainer:
+            return output
+        else:
+            return output, self.hidden
 
     def loss(self, y_pred, y_labels, x_lengths):
         # Before we calculate the negative log likelihood, we need to mask out the activations
