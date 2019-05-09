@@ -175,6 +175,11 @@ ALS_proc_df['niv_label'] = ALS_proc_df.groupby('subject_id')['niv_label'].shift(
 
 ALS_proc_df[['subject_id', 'ts', 'niv', 'niv_label']].head(20)
 
+# Save a version of the dataframe without normalization
+ALS_proc_df.to_csv(f'{data_path}cleaned/FCUL_ALS_cleaned_denorm.csv')
+
+ALS_proc_df.describe().transpose()
+
 # ## Normalizing continuous values
 
 ALS_proc_df = utils.normalize_data(ALS_proc_df)

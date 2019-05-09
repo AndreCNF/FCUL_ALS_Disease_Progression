@@ -87,9 +87,19 @@ torch.manual_seed(utils.random_seed)
 ALS_df = pd.read_csv(f'{data_path}cleaned/FCUL_ALS_cleaned.csv')
 ALS_df.head()
 
+# Read the original data (before normalization)
+orig_ALS_df = pd.read_csv(f'{data_path}cleaned/FCUL_ALS_cleaned_denorm.csv')
+orig_ALS_df.head()
+
 # Drop the unnamed index column
 ALS_df.drop(columns='Unnamed: 0', inplace=True)
 ALS_df.head()
+
+# Drop the unnamed index and label columns in the original dataframe
+orig_ALS_df.drop(columns=['Unnamed: 0', 'niv_label'], inplace=True)
+orig_ALS_df.head()
+
+ALS_df.describe().transpose()
 
 # +
 # List of used features
@@ -129,13 +139,20 @@ dataset = Time_Series_Dataset(data, ALS_df)
 train_dataloader, val_dataloader, test_dataloader, \
 train_indices, val_indices, test_indices            = utils.create_train_sets(dataset, test_train_ratio=0.2, 
                                                                               validation_ratio=0.1, 
-                                                                              batch_size=100, get_indeces=True)
+                                                                              batch_size=200, get_indeces=True)
 
 # Get the tensor data of the training and test sets
 # train_data = data[train_indices]
 # test_data = data[test_indices]
 train_features, train_labels = next(iter(train_dataloader))
 test_features, test_labels = next(iter(test_dataloader))
+
+# ## Confirm performance metrics
+
+# +
+# [TODO] Confirm if AUC, accuracy, F1-score, precision, recall and possibly other metrics give acceptable values for the model
+# [TODO] Also see if output values go out of the range [0, 1]
+# -
 
 # ## SHAP
 
@@ -171,24 +188,63 @@ test_data_exp = test_features[data_sorted_idx, :, :]
 explainer = shap.DeepExplainer(model, train_data_exp[:, :, 2:].float())
 
 # + {"pixiedust": {"displayParams": {}}}
-# Explain the first 10 predictions
+# Explain the predictions of the first 10 patients in the test set
 # shap_values = explainer.shap_values([test_data_exp[:10, :, 2:], x_lengths_test])
 shap_values = explainer.shap_values(test_data_exp[:10, :, 2:].float())
 # -
 
-shap_values.shape
-
-shap.force_plot?
+explainer.expected_value[0]
 
 # +
-# init the JS visualization code
+# Init the JS visualization code
 shap.initjs()
 
-# plot the explanation of the first prediction
-# Note the model is "multi-output" because it is rank-2 but only has one column
-shap.force_plot(0, shap_values[0][0], feature_names=ALS_cols)
+# Choosing which example to use
+patient = 0
+ts = 1
+
+# Plot the explanation of one prediction
+shap.force_plot(explainer.expected_value[0], shap_values[patient][ts], features=test_data_exp[patient, ts, 2:].numpy(), feature_names=ALS_cols)
 # -
 
-explainer.expected_value[0]
+# Denormalize the feature values so that the plots are easier to understand
+test_data_exp_denorm = utils.denormalize_data(orig_ALS_df, test_data_exp)
+
+test_data_exp_denorm.shape
+
+len(orig_ALS_df.columns)
+
+# +
+# Init the JS visualization code
+shap.initjs()
+
+# Choosing which example to use
+patient = 5
+ts = 1
+
+# Plot the explanation of one prediction
+shap.force_plot(explainer.expected_value[0], shap_values[patient][ts], features=test_data_exp_denorm[patient, ts, 2:].numpy(), feature_names=ALS_cols)
+# + {}
+# Init the JS visualization code
+shap.initjs()
+
+# Choosing which example to use
+patient = 5
+
+# Plot the explanation of the predictions for one patient
+shap.force_plot(explainer.expected_value[0], shap_values[patient], features=test_data_exp_denorm[patient, :, 2:].numpy(), feature_names=ALS_cols)
+# -
+# Summarize the effects of all the features
+shap.summary_plot(shap_values.reshape(-1, 48), features=test_data_exp_denorm[:, :, 2:].view(-1, 48).numpy(), feature_names=ALS_cols)
+
+# Summarize the effects of all the features
+shap.summary_plot(shap_values.reshape(-1, 48), features=test_data_exp_denorm[:, :, 2:].view(-1, 48).numpy(), feature_names=ALS_cols, plot_type='bar')
+
+# Summarize the effects of all the features
+shap.summary_plot(shap_values.reshape(-1, 48), features=test_data_exp_denorm[:, :, 2:].view(-1, 48).numpy(), feature_names=ALS_cols, plot_type='violin')
+
+# **Comments:**
+# * The SHAP values are significantly higher than what I usually see (tends to be between -1 and 1, not between -100000 and 250000).
+# * The output values also seem to be wrong in the patients' force plot, as it goes above 1.
 
 
