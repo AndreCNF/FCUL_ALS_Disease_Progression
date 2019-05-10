@@ -40,6 +40,7 @@ import shap                      # Model-agnostic interpretability package inspi
 # -
 
 import pixiedust
+import numpy as np
 
 # +
 # Change to parent directory (presumably "Documents")
@@ -154,11 +155,54 @@ test_features, test_labels = next(iter(test_dataloader))
 # [TODO] Also see if output values go out of the range [0, 1]
 # -
 
+output, metrics_vals = utils.model_inference(model, test_dataloader, seq_len_dict, 
+                       metrics=['loss', 'accuracy', 'AUC', 'precision', 'recall', 'F1'], output_rounded=True)
+
+metrics_vals
+
+# +
+# Get the original lengths of the sequences, for the test data
+x_lengths_test = [seq_len_dict[patient] for patient in list(test_features[:, 0, 0].numpy())]
+
+# Sorted indeces to get the data sorted by sequence length
+data_sorted_idx = list(np.argsort(x_lengths_test)[::-1])
+
+# Sort the x_lengths array by descending sequence length
+x_lengths_test = [x_lengths_test[idx] for idx in data_sorted_idx]
+
+# Sort the features and labels by descending sequence length
+test_data_exp = test_features[data_sorted_idx, :, :]
+test_labels = test_labels[data_sorted_idx, :]
+
+# +
+# Adjust the labels so that it gets the exact same shape as the predictions
+# (i.e. sequence length = max sequence length of the current batch, not the max of all the data)
+labels = torch.nn.utils.rnn.pack_padded_sequence(test_labels, x_lengths_test, batch_first=True)
+labels, _ = torch.nn.utils.rnn.pad_packed_sequence(labels, batch_first=True, padding_value=999999)
+
+mask = (labels <= 1).view(-1, 1).float()                    # Create a mask by filtering out all labels that are not a padding value
+unpadded_labels = torch.masked_select(labels.contiguous().view(-1, 1), mask.byte()) # Completely remove the padded values from the labels using the mask
+# -
+
+[tensor.item() for tensor in list(unpadded_labels.int())]
+
+[tensor.item() for tensor in list(output)]
+
+unpadded_labels.diff()
+
+list(np.diff(unpadded_labels.int().numpy()))
+
+[i for i, x in enumerate(list(np.diff(unpadded_labels.int().numpy()))) if x==1]
+
+[i for i, x in enumerate(list(np.diff(output.int().numpy()))) if x==1]
+
+# **Comment:** Most times, the model only predicts NIV use after the patient already started that treatment. This means that it usely only predicts the continuation of the treatment, which isn't so useful. Need to experiment training a model without giving any information regarding current NIV usage.
+
 # ## SHAP
 
 # +
 # Get the original lengths of the sequences, for the training data
-x_lengths_train = [seq_len_dict[patient] for patient in list(train_features[:100, 0, 0].numpy())]
+x_lengths_train = [seq_len_dict[patient] for patient in list(train_features[:200, 0, 0].numpy())]
 
 # Sorted indeces to get the data sorted by sequence length
 data_sorted_idx = list(np.argsort(x_lengths_train)[::-1])
@@ -183,13 +227,12 @@ x_lengths_test = [x_lengths_test[idx] for idx in data_sorted_idx]
 test_data_exp = test_features[data_sorted_idx, :, :]
 
 # + {"pixiedust": {"displayParams": {}}}
-# Use the first 100 training examples as our background dataset to integrate over
+# Use the first 200 training examples as our background dataset to integrate over
 # (Ignoring the first 2 features, as they constitute the identifiers 'subject_id' and 'ts')
 explainer = shap.DeepExplainer(model, train_data_exp[:, :, 2:].float())
 
 # + {"pixiedust": {"displayParams": {}}}
 # Explain the predictions of the first 10 patients in the test set
-# shap_values = explainer.shap_values([test_data_exp[:10, :, 2:], x_lengths_test])
 shap_values = explainer.shap_values(test_data_exp[:10, :, 2:].float())
 # -
 
