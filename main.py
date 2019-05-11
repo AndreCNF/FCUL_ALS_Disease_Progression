@@ -83,5 +83,3 @@ model = utils.train(model, train_dataloader, val_dataloader, test_dataloader, se
                     do_test=True, log_comet_ml=False, comet_ml_api_key='',
                     comet_ml_project_name='', comet_ml_workspace='', comet_ml_save_model=True,
                     features_list=list(ALS_df.columns).remove('niv_label'))
-
-# [TODO] Interpret the model

@@ -39,8 +39,10 @@ from Time_Series_Dataset import Time_Series_Dataset # Dataset subclass which all
 import shap                      # Model-agnostic interpretability package inspired on Shapley values
 # -
 
-import pixiedust
-import numpy as np
+# Debugging packages
+import pixiedust                 # Debugging in Jupyter Notebook cells
+import numpy as np               # Math operations with NumPy to confirm model's behaviour
+import time                      # Calculate code execution time
 
 # +
 # Change to parent directory (presumably "Documents")
@@ -93,11 +95,11 @@ orig_ALS_df = pd.read_csv(f'{data_path}cleaned/FCUL_ALS_cleaned_denorm.csv')
 orig_ALS_df.head()
 
 # Drop the unnamed index column
-ALS_df.drop(columns='Unnamed: 0', inplace=True)
+ALS_df.drop(columns=['Unnamed: 0', 'niv'], inplace=True)
 ALS_df.head()
 
 # Drop the unnamed index and label columns in the original dataframe
-orig_ALS_df.drop(columns=['Unnamed: 0', 'niv_label'], inplace=True)
+orig_ALS_df.drop(columns=['Unnamed: 0', 'niv_label', 'niv'], inplace=True)
 orig_ALS_df.head()
 
 ALS_df.describe().transpose()
@@ -114,7 +116,8 @@ for unused_feature in ['subject_id', 'ts', 'niv_label']:
 ALS_cols
 
 # Load the model with the best validation performance
-model = utils.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_26_04_2019_23_36.pth')
+# model = utils.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_26_04_2019_23_36.pth')
+model = utils.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_no_NIV_10_05_2019_03_03.pth')
 
 model
 
@@ -140,7 +143,7 @@ dataset = Time_Series_Dataset(data, ALS_df)
 train_dataloader, val_dataloader, test_dataloader, \
 train_indices, val_indices, test_indices            = utils.create_train_sets(dataset, test_train_ratio=0.2, 
                                                                               validation_ratio=0.1, 
-                                                                              batch_size=200, get_indeces=True)
+                                                                              batch_size=1000, get_indeces=True)
 
 # Get the tensor data of the training and test sets
 # train_data = data[train_indices]
@@ -149,11 +152,6 @@ train_features, train_labels = next(iter(train_dataloader))
 test_features, test_labels = next(iter(test_dataloader))
 
 # ## Confirm performance metrics
-
-# +
-# [TODO] Confirm if AUC, accuracy, F1-score, precision, recall and possibly other metrics give acceptable values for the model
-# [TODO] Also see if output values go out of the range [0, 1]
-# -
 
 output, metrics_vals = utils.model_inference(model, test_dataloader, seq_len_dict, 
                        metrics=['loss', 'accuracy', 'AUC', 'precision', 'recall', 'F1'], output_rounded=True)
@@ -188,21 +186,19 @@ unpadded_labels = torch.masked_select(labels.contiguous().view(-1, 1), mask.byte
 
 [tensor.item() for tensor in list(output)]
 
-unpadded_labels.diff()
-
 list(np.diff(unpadded_labels.int().numpy()))
 
 [i for i, x in enumerate(list(np.diff(unpadded_labels.int().numpy()))) if x==1]
 
 [i for i, x in enumerate(list(np.diff(output.int().numpy()))) if x==1]
 
-# **Comment:** Most times, the model only predicts NIV use after the patient already started that treatment. This means that it usely only predicts the continuation of the treatment, which isn't so useful. Need to experiment training a model without giving any information regarding current NIV usage.
+# **Comment:** [Before removing NIV from the features] Most times, the model only predicts NIV use after the patient already started that treatment. This means that it usely only predicts the continuation of the treatment, which isn't so useful. Need to experiment training a model without giving any information regarding current NIV usage.
 
 # ## SHAP
 
 # +
 # Get the original lengths of the sequences, for the training data
-x_lengths_train = [seq_len_dict[patient] for patient in list(train_features[:200, 0, 0].numpy())]
+x_lengths_train = [seq_len_dict[patient] for patient in list(train_features[:, 0, 0].numpy())]
 
 # Sorted indeces to get the data sorted by sequence length
 data_sorted_idx = list(np.argsort(x_lengths_train)[::-1])
@@ -215,7 +211,7 @@ train_data_exp = train_features[data_sorted_idx, :, :]
 
 # +
 # Get the original lengths of the sequences, for the test data
-x_lengths_test = [seq_len_dict[patient] for patient in list(test_features[:10, 0, 0].numpy())]
+x_lengths_test = [seq_len_dict[patient] for patient in list(test_features[:, 0, 0].numpy())]
 
 # Sorted indeces to get the data sorted by sequence length
 data_sorted_idx = list(np.argsort(x_lengths_test)[::-1])
@@ -225,15 +221,37 @@ x_lengths_test = [x_lengths_test[idx] for idx in data_sorted_idx]
 
 # Sort the features by descending sequence length
 test_data_exp = test_features[data_sorted_idx, :, :]
+# -
+
+# List of identifiers of each unique patient in the train set
+patients_in_train = [int(tensor) for tensor in torch.unique(train_data_exp[:, :, 0], sorted=False)]
+
+# +
+# List of tensors containing the data of each patient, with the correct sequence lengths
+train_patients_list = []
+
+for idx in range(train_data_exp.shape[0]):
+    patient = int(train_data_exp[idx, 0, 0])
+    train_patients_list.append(train_data_exp[idx, :seq_len_dict[patient], :].unsqueeze(0)[:, :, 2:].float())
+# -
+
+# Sequence length of each tensor (patient data) on the train list
+[int(tensor.shape[1]) for tensor in train_patients_list]
 
 # + {"pixiedust": {"displayParams": {}}}
 # Use the first 200 training examples as our background dataset to integrate over
 # (Ignoring the first 2 features, as they constitute the identifiers 'subject_id' and 'ts')
-explainer = shap.DeepExplainer(model, train_data_exp[:, :, 2:].float())
+explainer = shap.DeepExplainer(model, [train_data_exp[:, :, 2:].float(), x_lengths_train])
+# -
+
+model(*[train_data_exp[:, :, 2:].float(), x_lengths_train, False])
 
 # + {"pixiedust": {"displayParams": {}}}
+# [TODO] Fork SHAP and modify it to prevent it from expecting a list of inputs just because I sent feedforward arguments in the explainer
+start_time = time.time()
 # Explain the predictions of the first 10 patients in the test set
 shap_values = explainer.shap_values(test_data_exp[:10, :, 2:].float())
+print(f'Calculation of SHAP values took {time.time() - start_time} seconds')
 # -
 
 explainer.expected_value[0]
@@ -262,7 +280,7 @@ len(orig_ALS_df.columns)
 shap.initjs()
 
 # Choosing which example to use
-patient = 5
+patient = 0
 ts = 1
 
 # Plot the explanation of one prediction
@@ -278,16 +296,16 @@ patient = 5
 shap.force_plot(explainer.expected_value[0], shap_values[patient], features=test_data_exp_denorm[patient, :, 2:].numpy(), feature_names=ALS_cols)
 # -
 # Summarize the effects of all the features
-shap.summary_plot(shap_values.reshape(-1, 48), features=test_data_exp_denorm[:, :, 2:].view(-1, 48).numpy(), feature_names=ALS_cols)
+shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_data_exp_denorm[:10, :2, 2:].contiguous().view(-1, model.lstm.input_size).numpy(), feature_names=ALS_cols)
 
 # Summarize the effects of all the features
-shap.summary_plot(shap_values.reshape(-1, 48), features=test_data_exp_denorm[:, :, 2:].view(-1, 48).numpy(), feature_names=ALS_cols, plot_type='bar')
+shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_data_exp_denorm[:, :, 2:].view(-1, model.lstm.input_size).numpy(), feature_names=ALS_cols, plot_type='bar')
 
 # Summarize the effects of all the features
-shap.summary_plot(shap_values.reshape(-1, 48), features=test_data_exp_denorm[:, :, 2:].view(-1, 48).numpy(), feature_names=ALS_cols, plot_type='violin')
+shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_data_exp_denorm[:, :, 2:].view(-1, model.lstm.input_size).numpy(), feature_names=ALS_cols, plot_type='violin')
 
 # **Comments:**
-# * The SHAP values are significantly higher than what I usually see (tends to be between -1 and 1, not between -100000 and 250000).
-# * The output values also seem to be wrong in the patients' force plot, as it goes above 1.
+# * The SHAP values are significantly higher than what I usually see (tends to be between -1 and 1, not between -100000 and 250000). It seems to be because of the padding (the padding value is 999999).
+# * ~The output values also seem to be wrong in the patients' force plot, as it goes above 1.~ It doesn't seem to be a problem after all, it's just a SHAP indicator of whether the prediction will be 0 (if the value is negative) or 1 (if the value is positive).
 
 

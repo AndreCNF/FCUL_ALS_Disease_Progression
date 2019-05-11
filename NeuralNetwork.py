@@ -21,7 +21,7 @@ class NeuralNetwork(nn.Module):
         # Dropout used between the last LSTM layer and the fully connected layer
         self.dropout = nn.Dropout(p=self.p_dropout)
 
-    def forward(self, x, x_lengths=None, SHAP_explainer=True):
+    def forward(self, x, x_lengths=None, get_hidden_state=False):
         # Get the batch size (might not be always the same)
         batch_size = x.shape[0]
 
@@ -29,18 +29,14 @@ class NeuralNetwork(nn.Module):
         # a new batch as a continuation of a sequence.
         self.hidden = self.init_hidden(batch_size)
 
-        if SHAP_explainer:
-            # Get the outputs and hidden states from the LSTM layer(s)
-            lstm_output, self.hidden = self.lstm(x, self.hidden)
-        else:
-            # pack_padded_sequence so that padded items in the sequence won't be shown to the LSTM
-            x = torch.nn.utils.rnn.pack_padded_sequence(x, x_lengths, batch_first=True)
+        # pack_padded_sequence so that padded items in the sequence won't be shown to the LSTM
+        x = torch.nn.utils.rnn.pack_padded_sequence(x, x_lengths, batch_first=True)
 
-            # Get the outputs and hidden states from the LSTM layer(s)
-            lstm_output, self.hidden = self.lstm(x, self.hidden)
+        # Get the outputs and hidden states from the LSTM layer(s)
+        lstm_output, self.hidden = self.lstm(x, self.hidden)
 
-            # Undo the packing operation
-            lstm_output, _ = torch.nn.utils.rnn.pad_packed_sequence(lstm_output, batch_first=True)
+        # Undo the packing operation
+        lstm_output, _ = torch.nn.utils.rnn.pad_packed_sequence(lstm_output, batch_first=True)
 
         # Apply dropout to the last LSTM layer
         lstm_output = self.dropout(lstm_output)
@@ -51,10 +47,10 @@ class NeuralNetwork(nn.Module):
         # Classification scores after applying the fully connected layers and softmax
         output = torch.sigmoid(self.fc(flat_lstm_output))
 
-        if SHAP_explainer:
-            return output
-        else:
+        if get_hidden_state:
             return output, self.hidden
+        else:
+            return output
 
     def loss(self, y_pred, y_labels, x_lengths):
         # Before we calculate the negative log likelihood, we need to mask out the activations
@@ -84,7 +80,7 @@ class NeuralNetwork(nn.Module):
 
         # Pick the values for the label and zero out the rest with the mask
         y_pred = y_pred[range(y_pred.shape[0]), y_labels * mask.long()] * mask
-        # I need to get the diagonal of the tensor, which represents a vector of each  
+        # I need to get the diagonal of the tensor, which represents a vector of each
         # score (y_pred) multiplied by its correct mask value
         # Otherwise we get a square matrix of every score multiplied by every mask value
 
@@ -104,12 +100,12 @@ class NeuralNetwork(nn.Module):
 
         # Check if GPU is available
         train_on_gpu = torch.cuda.is_available()
-        
+
         if train_on_gpu:
             hidden = (weight.new(self.n_layers, batch_size, self.n_hidden).zero_().cuda(),
                       weight.new(self.n_layers, batch_size, self.n_hidden).zero_().cuda())
         else:
             hidden = (weight.new(self.n_layers, batch_size, self.n_hidden).zero_(),
                       weight.new(self.n_layers, batch_size, self.n_hidden).zero_())
-        
+
         return hidden

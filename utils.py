@@ -730,7 +730,7 @@ def model_inference(model, dataloader, seq_len_dict, data=None, metrics=['loss',
         x_lengths = [x_lengths[idx] for idx in data_sorted_idx]         # Sort the x_lengths array by descending sequence length
         features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
         labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
-        scores, _ = model.forward(features[:, :, 2:], x_lengths, SHAP_explainer=False)        # Feedforward the data through the model
+        scores = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
                                                                         # (the 2 is there to avoid using the identifier features in the predictions)
 
         # Adjust the labels so that it gets the exact same shape as the predictions
@@ -794,7 +794,7 @@ def model_inference(model, dataloader, seq_len_dict, data=None, metrics=['loss',
             x_lengths = [x_lengths[idx] for idx in data_sorted_idx]         # Sort the x_lengths array by descending sequence length
             features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
             labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
-            scores, _ = model.forward(features[:, :, 2:], x_lengths, SHAP_explainer=False)        # Feedforward the data through the model
+            scores = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
                                                                             # (the 2 is there to avoid using the identifier features in the predictions)
 
             # Adjust the labels so that it gets the exact same shape as the predictions
@@ -812,7 +812,7 @@ def model_inference(model, dataloader, seq_len_dict, data=None, metrics=['loss',
                 output = torch.cat([output, pred.int()])
             else:
                 # Get the model scores (class probabilities)
-                output = torch.cat([output, unpadded_scores])
+                output = torch.cat([output.float(), unpadded_scores])
 
             if any(mtrc in metrics for mtrc in ['precision', 'recall', 'F1']):
                 # Calculate the number of true positives, false negatives, true negatives and false positives
@@ -985,7 +985,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
             x_lengths = [x_lengths[idx] for idx in data_sorted_idx]         # Sort the x_lengths array by descending sequence length
             features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
             labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
-            scores, _ = model.forward(features[:, :, 2:], x_lengths, SHAP_explainer=False)        # Feedforward the data through the model
+            scores = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
                                                                             # (the 2 is there to avoid using the identifier features in the predictions)
 
             # Adjust the labels so that it gets the exact same shape as the predictions
@@ -1022,7 +1022,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                     x_lengths = [x_lengths[idx] for idx in data_sorted_idx]         # Sort the x_lengths array by descending sequence length
                     features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
                     labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
-                    scores, _ = model.forward(features[:, :, 2:], x_lengths, SHAP_explainer=False)        # Feedforward the data through the model
+                    scores = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
                                                                                     # (the 2 is there to avoid using the identifier features in the predictions)
 
                     # Adjust the labels so that it gets the exact same shape as the predictions
@@ -1076,7 +1076,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
 
                 if log_comet_ml and comet_ml_save_model:
                     # Upload the model to Comet.ml
-                    experiment.log_asset(file_path=model_filename, overwrite=True)
+                    experiment.log_asset(file_data=model_filename, overwrite=True)
 
         # Calculate the average of the metrics over the epoch
         train_loss = train_loss / len(train_dataloader)
@@ -1110,3 +1110,9 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
         experiment.log_other("completed", True)
 
     return model
+
+# [TODO] Create a model interpretation method that does feature importance on
+# each instance and also "instance importance", finding which timestamps had the
+# biggest impact on the model's output for a particular input data.
+# [Bonus TODO] Upload model explainer and interpretability plots to Comet.ml
+# def interpret_model(model, data, seq_len_dict):
