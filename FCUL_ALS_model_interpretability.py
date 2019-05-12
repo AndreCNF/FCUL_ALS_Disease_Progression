@@ -221,36 +221,19 @@ x_lengths_test = [x_lengths_test[idx] for idx in data_sorted_idx]
 
 # Sort the features by descending sequence length
 test_data_exp = test_features[data_sorted_idx, :, :]
-# -
-
-# List of identifiers of each unique patient in the train set
-patients_in_train = [int(tensor) for tensor in torch.unique(train_data_exp[:, :, 0], sorted=False)]
-
-# +
-# List of tensors containing the data of each patient, with the correct sequence lengths
-train_patients_list = []
-
-for idx in range(train_data_exp.shape[0]):
-    patient = int(train_data_exp[idx, 0, 0])
-    train_patients_list.append(train_data_exp[idx, :seq_len_dict[patient], :].unsqueeze(0)[:, :, 2:].float())
-# -
-
-# Sequence length of each tensor (patient data) on the train list
-[int(tensor.shape[1]) for tensor in train_patients_list]
 
 # + {"pixiedust": {"displayParams": {}}}
 # Use the first 200 training examples as our background dataset to integrate over
 # (Ignoring the first 2 features, as they constitute the identifiers 'subject_id' and 'ts')
-explainer = shap.DeepExplainer(model, [train_data_exp[:, :, 2:].float(), x_lengths_train])
-# -
-
-model(*[train_data_exp[:, :, 2:].float(), x_lengths_train, False])
+explainer = shap.DeepExplainer(model, train_data_exp[:, :, 2:].float(), feedforward_args=[x_lengths_train])
 
 # + {"pixiedust": {"displayParams": {}}}
-# [TODO] Fork SHAP and modify it to prevent it from expecting a list of inputs just because I sent feedforward arguments in the explainer
 start_time = time.time()
 # Explain the predictions of the first 10 patients in the test set
-shap_values = explainer.shap_values(test_data_exp[:10, :, 2:].float())
+n_samples = 10
+shap_values = explainer.shap_values(test_data_exp[:n_samples, :, 2:].float(), 
+                                    feedforward_args=[x_lengths_train, x_lengths_test[:n_samples]],
+                                    var_seq_len=True)
 print(f'Calculation of SHAP values took {time.time() - start_time} seconds')
 # -
 
