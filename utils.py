@@ -1110,9 +1110,3 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
         experiment.log_other("completed", True)
 
     return model
-
-# [TODO] Create a model interpretation method that does feature importance on
-# each instance and also "instance importance", finding which timestamps had the
-# biggest impact on the model's output for a particular input data.
-# [Bonus TODO] Upload model explainer and interpretability plots to Comet.ml
-# def interpret_model(model, data, seq_len_dict):
