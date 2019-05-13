@@ -1,10 +1,17 @@
 import torch                            # PyTorch to create and apply deep learning models
 import pandas as pd                     # Pandas to handle the data in dataframes
+import numpy as np                      # NumPy to handle numeric and NaN operations
 import shap                             # Module used for the calculation of approximate Shapley values
 import warnings                         # Print warnings for bad practices
+from tqdm import tqdm                                   # tqdm allows to track code execution progress
+from tqdm import tqdm_notebook                          # tqdm allows to track code execution progress
+
+def in_ipynb():
+    '''Detect if code is running in a IPython notebook, such as in Jupyter Lab'''
+    return str(type(get_ipython())) == "<class 'ipykernel.zmqshell.ZMQInteractiveShell'>"
 
 class ModelInterpreter:
-    def __init__(self, model, data, seq_len_dict=None, id_column=0, inst_column=1
+    def __init__(self, model, data, seq_len_dict=None, id_column=0, inst_column=1,
                  fast_calc=True, SHAP_bkgnd_samples=1000, random_seed=42):
         '''A machine learning model interpreter which calculates instance and
         feature importance.
@@ -33,7 +40,7 @@ class ModelInterpreter:
         inst_column : int, default 1
             Number of the column which corresponds to the instance or timestamp
             identifier in the data tensor.
-        fast_calc : bool, default None
+        fast_calc : bool, default True
             If set to True, the algorithm uses simple mask filters, occluding
             instances and replacing features with reference values, in order
             to do a fast interpretation of the model. If set to False, SHAP
@@ -57,15 +64,24 @@ class ModelInterpreter:
         if type(data) is torch.Tensor:
             self.data = data
         elif type(data) is pd.DataFrame:
-            n_patients = data[self.id_column].nunique()       # Total number of patients
-            n_inputs = len(data.columns)                          # Number of input features
-            padding_value = 999999                                # Value to be used in the padding
+            n_ids = data.iloc[:, self.id_column].nunique()      # Total number of unique sequence identifiers
+            n_features = len(data.columns)                      # Number of input features
+            padding_value = 999999                              # Value to be used in the padding
+
+            # Find the sequence lengths of the data
+            self.seq_len_dict = self.calc_seq_len_dict(data)
 
             # Pad data (to have fixed sequence length) and convert into a PyTorch tensor
-            self.data = utils.dataframe_to_padded_tensor(data, self.seq_len_dict, n_subjects,
-                                                         n_inputs, padding_value=padding_value)
+            self.data = utils.dataframe_to_padded_tensor(data, self.seq_len_dict, n_ids,
+                                                         n_features, padding_value=padding_value)
         else:
             raise Exception('ERROR: Invalid data type. Please provide data in a Pandas DataFrame or PyTorch Tensor format.')
+
+        # Define the method to use as a progress bar, depending on whether code is running on a notebook or terminal
+        if in_ipynb():
+            self.progress_bar = tqdm_notebook
+        else:
+            self.progress_bar = tqdm
 
         # Declare attributes that will store importance scores (instance and feature importance)
         self.inst_scores = None
@@ -221,7 +237,7 @@ class ModelInterpreter:
         sorted_data = data[data_sorted_idx, :, :]
         return sorted_data, x_lengths
 
-    def instance_importance(self, data=None, x_lengths=None):
+    def instance_importance(self, data=None, x_lengths=None, see_progress=True):
         '''Calculate the instance importance scores to interpret the impact of
         each instance of a sequence on the final output.
 
@@ -233,6 +249,9 @@ class ModelInterpreter:
             instance importance). Otherwise, all the data is used.
         x_lengths : list of int
             Sorted list of sequence lengths, relative to the input data.
+        see_progress : bool, default True
+            If set to True, a progress bar will show up indicating the execution
+            of the instance importance scores calculations.
 
         Returns
         -------
@@ -245,29 +264,50 @@ class ModelInterpreter:
             # If a subset of data to interpret isn't specified, the interpreter will use all the data
             data = self.data
 
-        # Model output when using all the original instances in the input sequences
-        ref_output = self.model(data)
+        # Make sure that the data is in type float
+        data = data.float()
 
-        def calc_instance_score(sequence_data, instance, ref_output):
+        # Remove identifier columns from the data
+        features_idx = list(range(data.shape[2]))
+        features_idx.remove(self.id_column)
+        features_idx.remove(self.inst_column)
+        data_no_ids = data[:, :, features_idx]
+
+        # Model output when using all the original instances in the input sequences
+        ref_output = self.model(data_no_ids, x_lengths)
+
+        def calc_instance_score(sequence_data, instance, ref_output, x_length):
+            # Remove identifier columns from the data
+            features_idx = list(range(sequence_data.shape[1]))
+            features_idx.remove(self.id_column)
+            features_idx.remove(self.inst_column)
+            sequence_data = sequence_data[:, features_idx]
+
             # Indeces without the instance that is being analyzed
-            new_idx = [i for i in range(0, instance)] + [i for i in range(instance, sequence_data.shape[0])]
+            instances_idx = list(range(sequence_data.shape[0]))
+            instances_idx.remove(instance)
 
             # Sequence data without the instance that is being analyzed
-            sequence_data = sequence_data[new_idx, :]
+            sequence_data = sequence_data[instances_idx, :]
 
             # Add a third dimension for the data to be readable by the model
             sequence_data = sequence_data.unsqueeze(0)
 
             # Calculate the output without the instance that is being analyzed
-            new_output = self.model(sequence_data)
+            new_output = self.model(sequence_data, [x_length-1])
 
             # The instance importance score is then the difference between the output probability without the instance
             # and the probability with the instance
             inst_score = new_output - ref_output
             return inst_score
 
-        inst_scores = [[calc_instance_score(data[seq_id, :, :], inst, ref_output[seq_id]) for inst in x_lengths[seq_id]]
-                       for seq_id in range(data.shape[0])]
+        if see_progress:
+            print('Calculating instance importance scores...')
+            inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num])
+                            for inst in range(x_lengths[seq_num])] for seq_num in self.progress_bar(range(data.shape[0]))]
+        else:
+            inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num])
+                            for inst in range(x_lengths[seq_num])] for seq_num in range(data.shape[0])]
         inst_scores = torch.Tensor(inst_scores)
         return inst_scores
 
@@ -308,19 +348,19 @@ class ModelInterpreter:
         if not fast_calc:
             print(f'Attention: you have chosen to interpret the model using SHAP, \
                     with {self.SHAP_bkgnd_samples} background samples applied to \
-                    {test_data.shape[0]*test_data.shape[1]} test samples. \
-                    This might take a while. Depending on your computer\'s \
-                    processing power, you should do a coffee break or even go \
-                    to sleep!')
+                    {test_data.shape[0]} test samples. This might take a while. \
+                    Depending on your computer\'s processing power, you should \
+                    do a coffee break or even go to sleep!')
 
             # Sort the background data by sequence length
             bkgnd_data, x_lengths_bkgnd = self.sort_by_seq_len(bkgnd_data)
 
             # Remove identifier columns from the data
-            bkgnd_data.drop(columns=[bkgnd_data.columns[self.id_column],
-                                     bkgnd_data.columns[self.inst_column]], inplace=True)
-            test_data.drop(columns=[test_data.columns[self.id_column],
-                                    test_data.columns[self.inst_column]], inplace=True)
+            features_idx = list(range(test_data.shape[2]))
+            features_idx.remove(self.id_column)
+            features_idx.remove(self.inst_column)
+            bkgnd_data = bkgnd_data[:, :, features_idx]
+            test_data = test_data[:, :, features_idx]
 
             # Make sure that the data is in type float
             bkgnd_data = bkgnd_data.float()
@@ -333,8 +373,8 @@ class ModelInterpreter:
             start_time = time.time()
 
             # Explain the predictions of the sequences in the test set
-            feat_scores = explainer.shap_values(test_data_exp,
-                                                feedforward_args=[x_lengths_bkgnd, x_lengths_test],
+            feat_scores = explainer.shap_values(test_data,
+                                                feedforward_args=[x_lengths_bkgnd, x_lengths],
                                                 var_seq_len=True)
             print(f'Calculation of SHAP values took {time.time() - start_time} seconds')
             return feat_scores
@@ -348,7 +388,7 @@ class ModelInterpreter:
     # [Bonus TODO] Upload model explainer and interpretability plots to Comet.ml
     def interpret_model(self, bkgnd_data=None, test_data=None, new_data=False,
                         df=None, instance_importance=True, feature_importance=False,
-                        fast_calc=None):
+                        fast_calc=None, see_progress=True):
         '''Method to calculate scores of feature and/or instance importance, in
         order to be able to interpret a model on a given data.
 
@@ -390,6 +430,9 @@ class ModelInterpreter:
             to do a fast interpretation of the model. If set to False, SHAP
             values are used for a more precise and truthful interpretation of
             the model's behavior, requiring longer computation times.
+        see_progress : bool, default True
+            If set to True, a progress bar will show up indicating the execution
+            of the instance importance scores calculations.
 
         Returns
         -------
@@ -438,18 +481,18 @@ class ModelInterpreter:
 
         if instance_importance:
             # Calculate the scores of importance of each instance
-            self.inst_scores = self.instance_importance(test_data, x_lengths_test)
+            self.inst_scores = self.instance_importance(test_data, x_lengths_test, see_progress)
 
         if feature_importance:
             # Calculate the scores of importance of each feature in each instance
             self.feat_scores = self.feature_importance(bkgnd_data, test_data, x_lengths_test, fast_calc)
 
         if instance_importance and feature_importance:
-            return inst_scores, feat_scores
+            return self.inst_scores, self.feat_scores
         elif instance_importance and not feature_importance:
-            return inst_scores
+            return self.inst_scores
         elif not instance_importance and feature_importance:
-            return feature_importance
+            return self.feat_scores
         else:
             warnings.warn('Without setting instance_importance nor feature_importance \
                            to True, the interpret_model function won\'t do anything relevant.')

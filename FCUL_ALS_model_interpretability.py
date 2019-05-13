@@ -34,9 +34,10 @@ import numpy as np               # NumPy to handle numeric and NaN operations
 from tqdm import tqdm_notebook   # tqdm allows to track code execution progress
 import torch                     # PyTorch to create and apply deep learning models
 from torch.utils.data.sampler import SubsetRandomSampler
+import shap                      # Model-agnostic interpretability package inspired on Shapley values
 import utils                     # Contains auxiliary functions
 from Time_Series_Dataset import Time_Series_Dataset # Dataset subclass which allows the creation of Dataset objects
-import shap                      # Model-agnostic interpretability package inspired on Shapley values
+from ModelInterpreter import ModelInterpreter # Class that enables the interpretation of models that handle variable sequence length input data
 # -
 
 # Debugging packages
@@ -201,9 +202,10 @@ train_features, x_lengths_train = utils.sort_by_seq_len(train_features, seq_len_
 test_features, x_lengths_test = utils.sort_by_seq_len(test_features, seq_len_dict)
 
 # + {"pixiedust": {"displayParams": {}}}
-# Use the first 200 training examples as our background dataset to integrate over
+# Use the first n_bkgnd_samples training examples as our background dataset to integrate over
 # (Ignoring the first 2 features, as they constitute the identifiers 'subject_id' and 'ts')
-explainer = shap.DeepExplainer(model, train_features[:, :, 2:].float(), feedforward_args=[x_lengths_train])
+n_bkgnd_samples = 200
+explainer = shap.DeepExplainer(model, train_features[:n_bkgnd_samples, :, 2:].float(), feedforward_args=[x_lengths_train])
 
 # + {"pixiedust": {"displayParams": {}}}
 start_time = time.time()
@@ -273,5 +275,16 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 # [Before removing padings from data]
 # * The SHAP values are significantly higher than what I usually see (tends to be between -1 and 1, not between -100000 and 250000). It seems to be because of the padding (the padding value is 999999).
 # * ~The output values also seem to be wrong in the patients' force plot, as it goes above 1.~ It doesn't seem to be a problem after all, it's just a SHAP indicator of whether the prediction will be 0 (if the value is negative) or 1 (if the value is positive).
+#
+# [After removing padings from data]
+# * The SHAP values now seem to have normal values (between -1 and 1) and the plots also look good.
+
+# ## Model Interpreter
+#
+# Using my custom class for model interpretability through instance and feature importance.
+
+interpreter = ModelInterpreter(model, data, seq_len_dict, fast_calc=False, SHAP_bkgnd_samples=200)
+
+interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features, instance_importance=True, feature_importance=True)
 
 

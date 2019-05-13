@@ -690,6 +690,11 @@ def sort_by_seq_len(data, seq_len_dict, id_column=0):
     return sorted_data, x_lengths
 
 
+def in_ipynb():
+    '''Detect if code is running in a IPython notebook, such as in Jupyter Lab'''
+    return str(type(get_ipython())) == "<class 'ipykernel.zmqshell.ZMQInteractiveShell'>"
+
+
 def model_inference(model, dataloader, seq_len_dict, data=None, metrics=['loss', 'accuracy', 'AUC'],
                     padding_value=999999, output_rounded=False, experiment=None, set_name='test'):
     '''Do inference on specified data using a given model.
