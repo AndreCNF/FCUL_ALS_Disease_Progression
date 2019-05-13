@@ -653,6 +653,36 @@ def load_checkpoint(filepath):
     return model
 
 
+def sort_by_seq_len(self, data):
+    '''Sort the data by sequence length in order to correctly apply it to a
+    PyTorch neural network.
+
+    Parameters
+    ----------
+    data : torch.Tensor, default None
+        Data tensor on which sorting by sequence length will be applied.
+
+    Returns
+    -------
+    sorted_data : torch.Tensor, default None
+        Data tensor already sorted by sequence length.
+    x_lengths : list of int
+        Sorted list of sequence lengths, relative to the input data.
+    '''
+    # Get the original lengths of the sequences, for the input data
+    x_lengths = [self.seq_len_dict[id] for id in list(data[:, 0, self.id_column_num].numpy())]
+
+    # Sorted indeces to get the data sorted by sequence length
+    data_sorted_idx = list(np.argsort(x_lengths)[::-1])
+
+    # Sort the x_lengths array by descending sequence length
+    x_lengths = [x_lengths[idx] for idx in data_sorted_idx]
+
+    # Sort the data by descending sequence length
+    sorted_data = data[data_sorted_idx, :, :]
+    return sorted_data, x_lengths
+
+
 def model_inference(model, dataloader, seq_len_dict, data=None, metrics=['loss', 'accuracy', 'AUC'],
                     padding_value=999999, output_rounded=False, experiment=None, set_name='test'):
     '''Do inference on specified data using a given model.
