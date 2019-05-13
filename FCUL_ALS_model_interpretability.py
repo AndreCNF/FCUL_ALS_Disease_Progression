@@ -196,42 +196,20 @@ list(np.diff(unpadded_labels.int().numpy()))
 
 # ## SHAP
 
-# +
-# Get the original lengths of the sequences, for the training data
-x_lengths_train = [seq_len_dict[patient] for patient in list(train_features[:, 0, 0].numpy())]
-
-# Sorted indeces to get the data sorted by sequence length
-data_sorted_idx = list(np.argsort(x_lengths_train)[::-1])
-
-# Sort the x_lengths array by descending sequence length
-x_lengths_train = [x_lengths_train[idx] for idx in data_sorted_idx]
-
-# Sort the features by descending sequence length
-train_data_exp = train_features[data_sorted_idx, :, :]
-
-# +
-# Get the original lengths of the sequences, for the test data
-x_lengths_test = [seq_len_dict[patient] for patient in list(test_features[:, 0, 0].numpy())]
-
-# Sorted indeces to get the data sorted by sequence length
-data_sorted_idx = list(np.argsort(x_lengths_test)[::-1])
-
-# Sort the x_lengths array by descending sequence length
-x_lengths_test = [x_lengths_test[idx] for idx in data_sorted_idx]
-
-# Sort the features by descending sequence length
-test_data_exp = test_features[data_sorted_idx, :, :]
+# Get the original lengths of the sequences and sort the data
+train_features, x_lengths_train = utils.sort_by_seq_len(train_features, seq_len_dict)
+test_features, x_lengths_test = utils.sort_by_seq_len(test_features, seq_len_dict)
 
 # + {"pixiedust": {"displayParams": {}}}
 # Use the first 200 training examples as our background dataset to integrate over
 # (Ignoring the first 2 features, as they constitute the identifiers 'subject_id' and 'ts')
-explainer = shap.DeepExplainer(model, train_data_exp[:, :, 2:].float(), feedforward_args=[x_lengths_train])
+explainer = shap.DeepExplainer(model, train_features[:, :, 2:].float(), feedforward_args=[x_lengths_train])
 
 # + {"pixiedust": {"displayParams": {}}}
 start_time = time.time()
 # Explain the predictions of the first 10 patients in the test set
-n_samples = 10
-shap_values = explainer.shap_values(test_data_exp[:n_samples, :, 2:].float(), 
+n_samples = 1
+shap_values = explainer.shap_values(test_features[:n_samples, :, 2:].float(), 
                                     feedforward_args=[x_lengths_train, x_lengths_test[:n_samples]],
                                     var_seq_len=True)
 print(f'Calculation of SHAP values took {time.time() - start_time} seconds')
@@ -248,13 +226,13 @@ patient = 0
 ts = 1
 
 # Plot the explanation of one prediction
-shap.force_plot(explainer.expected_value[0], shap_values[patient][ts], features=test_data_exp[patient, ts, 2:].numpy(), feature_names=ALS_cols)
+shap.force_plot(explainer.expected_value[0], shap_values[patient][ts], features=test_features[patient, ts, 2:].numpy(), feature_names=ALS_cols)
 # -
 
 # Denormalize the feature values so that the plots are easier to understand
-test_data_exp_denorm = utils.denormalize_data(orig_ALS_df, test_data_exp)
+test_features_denorm = utils.denormalize_data(orig_ALS_df, test_features)
 
-test_data_exp_denorm.shape
+test_features_denorm.shape
 
 len(orig_ALS_df.columns)
 
@@ -267,27 +245,32 @@ patient = 0
 ts = 1
 
 # Plot the explanation of one prediction
-shap.force_plot(explainer.expected_value[0], shap_values[patient][ts], features=test_data_exp_denorm[patient, ts, 2:].numpy(), feature_names=ALS_cols)
+shap.force_plot(explainer.expected_value[0], shap_values[patient][ts], features=test_features_denorm[patient, ts, 2:].numpy(), feature_names=ALS_cols)
 # + {}
 # Init the JS visualization code
 shap.initjs()
 
 # Choosing which example to use
-patient = 5
+patient = 0
+
+# True sequence length of the current patient's data
+seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
 
 # Plot the explanation of the predictions for one patient
-shap.force_plot(explainer.expected_value[0], shap_values[patient], features=test_data_exp_denorm[patient, :, 2:].numpy(), feature_names=ALS_cols)
+shap.force_plot(explainer.expected_value[0], shap_values[patient, :seq_len], features=test_features_denorm[patient, :seq_len, 2:].numpy(), feature_names=ALS_cols)
 # -
 # Summarize the effects of all the features
-shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_data_exp_denorm[:10, :2, 2:].contiguous().view(-1, model.lstm.input_size).numpy(), feature_names=ALS_cols)
+shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_features_denorm[:n_samples, :, 2:].contiguous().view(-1, model.lstm.input_size).numpy(), feature_names=ALS_cols)
 
 # Summarize the effects of all the features
-shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_data_exp_denorm[:, :, 2:].view(-1, model.lstm.input_size).numpy(), feature_names=ALS_cols, plot_type='bar')
+shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_features_denorm[:, :, 2:].view(-1, model.lstm.input_size).numpy(), feature_names=ALS_cols, plot_type='bar')
 
 # Summarize the effects of all the features
-shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_data_exp_denorm[:, :, 2:].view(-1, model.lstm.input_size).numpy(), feature_names=ALS_cols, plot_type='violin')
+shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_features_denorm[:n_samples, :, 2:].contiguous().view(-1, model.lstm.input_size).numpy(), feature_names=ALS_cols, plot_type='violin')
 
 # **Comments:**
+#
+# [Before removing padings from data]
 # * The SHAP values are significantly higher than what I usually see (tends to be between -1 and 1, not between -100000 and 250000). It seems to be because of the padding (the padding value is 999999).
 # * ~The output values also seem to be wrong in the patients' force plot, as it goes above 1.~ It doesn't seem to be a problem after all, it's just a SHAP indicator of whether the prediction will be 0 (if the value is negative) or 1 (if the value is positive).
 

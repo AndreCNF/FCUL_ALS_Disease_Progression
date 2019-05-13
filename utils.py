@@ -653,14 +653,21 @@ def load_checkpoint(filepath):
     return model
 
 
-def sort_by_seq_len(self, data):
+def sort_by_seq_len(data, seq_len_dict, id_column=0):
     '''Sort the data by sequence length in order to correctly apply it to a
     PyTorch neural network.
 
     Parameters
     ----------
-    data : torch.Tensor, default None
+    data : torch.Tensor
         Data tensor on which sorting by sequence length will be applied.
+    seq_len_dict : dict
+        Dictionary containing the sequence lengths for each index of the
+        original dataframe. This allows to ignore the padding done in
+        the fixed sequence length tensor.
+    id_column : int, default 0
+        Number of the column which corresponds to the subject identifier in
+        the data tensor.
 
     Returns
     -------
@@ -670,7 +677,7 @@ def sort_by_seq_len(self, data):
         Sorted list of sequence lengths, relative to the input data.
     '''
     # Get the original lengths of the sequences, for the input data
-    x_lengths = [self.seq_len_dict[id] for id in list(data[:, 0, self.id_column_num].numpy())]
+    x_lengths = [seq_len_dict[id] for id in list(data[:, 0, id_column].numpy())]
 
     # Sorted indeces to get the data sorted by sequence length
     data_sorted_idx = list(np.argsort(x_lengths)[::-1])
