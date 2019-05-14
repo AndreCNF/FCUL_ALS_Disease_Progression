@@ -3,12 +3,32 @@ import pandas as pd                     # Pandas to handle the data in dataframe
 import numpy as np                      # NumPy to handle numeric and NaN operations
 import shap                             # Module used for the calculation of approximate Shapley values
 import warnings                         # Print warnings for bad practices
-from tqdm import tqdm                                   # tqdm allows to track code execution progress
-from tqdm import tqdm_notebook                          # tqdm allows to track code execution progress
+from tqdm import tqdm                   # tqdm allows to track code execution progress
+from tqdm import tqdm_notebook          # tqdm allows to track code execution progress
+import time                             # Calculate code execution time
 
 def in_ipynb():
-    '''Detect if code is running in a IPython notebook, such as in Jupyter Lab'''
+    '''Detect if code is running in a IPython notebook, such as in Jupyter Lab.'''
     return str(type(get_ipython())) == "<class 'ipykernel.zmqshell.ZMQInteractiveShell'>"
+
+def pad_list(x_list, length, padding_value=999999):
+    '''Pad a list with a specific padding value until the desired length is
+    met.
+
+    Parameters
+    ----------
+    x_list : list
+        List which will be padded.
+    length : int
+        Desired length for the final padded list.
+    padding_value :
+        Value to use in the padding, to fill the list.
+
+    Returns
+    -------
+    x_list : list
+        Resulting padded list'''
+    return x_list + [padding_value] * (length - len(x_list))
 
 class ModelInterpreter:
     def __init__(self, model, data, seq_len_dict=None, id_column=0, inst_column=1,
@@ -255,10 +275,9 @@ class ModelInterpreter:
 
         Returns
         -------
-        inst_scores : torch.Tensor
-            Tensor containing the importance scores of each instance in the
-            given input sequences. Only calculated if instance_importance is set
-            to True.
+        inst_scores : numpy.Array
+            Array containing the importance scores of each instance in the
+            given input sequences.
         '''
         if data is None:
             # If a subset of data to interpret isn't specified, the interpreter will use all the data
@@ -296,22 +315,29 @@ class ModelInterpreter:
             # Calculate the output without the instance that is being analyzed
             new_output = self.model(sequence_data, [x_length-1])
 
-            # The instance importance score is then the difference between the output probability without the instance
-            # and the probability with the instance
-            inst_score = new_output - ref_output
+            # Only use the last output (i.e. the one from the last instance of the sequence)
+            new_output = new_output[-1].item()
+            ref_output = ref_output[-1].item()
+
+            # The instance importance score is then the difference between the output probability with the instance
+            # and the probability without the instance
+            inst_score = ref_output - new_output
             return inst_score
 
         if see_progress:
-            print('Calculating instance importance scores...')
             inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num])
                             for inst in range(x_lengths[seq_num])] for seq_num in self.progress_bar(range(data.shape[0]))]
         else:
             inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num])
                             for inst in range(x_lengths[seq_num])] for seq_num in range(data.shape[0])]
-        inst_scores = torch.Tensor(inst_scores)
+        # Pad the instance scores lists so that all have the same length
+        inst_scores = [pad_list(scores_list, data.shape[1], padding_value=999999) for scores_list in inst_scores]
+
+        # Convert to a NumPy array
+        inst_scores = np.array(inst_scores)
         return inst_scores
 
-    def feature_importance(self, bkgnd_data=None, test_data=None, x_lengths=None, fast_calc=None):
+    def feature_importance(self, bkgnd_data=None, test_data=None, x_lengths=None, fast_calc=None, see_progress=True):
         '''Calculate the feature importance scores to interpret the impact
         of each feature in each instance's output.
 
@@ -333,24 +359,22 @@ class ModelInterpreter:
             to do a fast interpretation of the model. If set to False, SHAP
             values are used for a more precise and truthful interpretation of
             the model's behavior, requiring longer computation times.
+        see_progress : bool, default True
+            If set to True, a progress bar will show up indicating the execution
+            of the feature importance scores calculations.
 
         Returns
         -------
-        feat_scores : torch.Tensor
-            Tensor containing the importance scores of each feature, of each
-            instance, in the given input sequences. Only calculated if
-            feature_importance is set to True.
+        feat_scores : numpy.Array
+            Array containing the importance scores of each feature, of each
+            instance, in the given input sequences.
         '''
         if fast_calc is None:
             # Use the predefined option if fast_calc isn't set in the function call
             fast_calc = self.fast_calc
 
         if not fast_calc:
-            print(f'Attention: you have chosen to interpret the model using SHAP, \
-                    with {self.SHAP_bkgnd_samples} background samples applied to \
-                    {test_data.shape[0]} test samples. This might take a while. \
-                    Depending on your computer\'s processing power, you should \
-                    do a coffee break or even go to sleep!')
+            print(f'Attention: you have chosen to interpret the model using SHAP, with {self.SHAP_bkgnd_samples} background samples applied to {test_data.shape[0]} test samples. This might take a while. Depending on your computer\'s processing power, you should do a coffee break or even go to sleep!')
 
             # Sort the background data by sequence length
             bkgnd_data, x_lengths_bkgnd = self.sort_by_seq_len(bkgnd_data)
@@ -367,7 +391,7 @@ class ModelInterpreter:
             test_data = test_data.float()
 
             # Use the background dataset to integrate over
-            explainer = shap.DeepExplainer(model, bkgnd_data, feedforward_args=[x_lengths_bkgnd])
+            explainer = shap.DeepExplainer(self.model, bkgnd_data, feedforward_args=[x_lengths_bkgnd])
 
             # Count the time that takes to calculate the SHAP values
             start_time = time.time()
@@ -375,7 +399,7 @@ class ModelInterpreter:
             # Explain the predictions of the sequences in the test set
             feat_scores = explainer.shap_values(test_data,
                                                 feedforward_args=[x_lengths_bkgnd, x_lengths],
-                                                var_seq_len=True)
+                                                var_seq_len=True, see_progress=True)
             print(f'Calculation of SHAP values took {time.time() - start_time} seconds')
             return feat_scores
 
@@ -436,12 +460,12 @@ class ModelInterpreter:
 
         Returns
         -------
-        inst_scores : torch.Tensor
-            Tensor containing the importance scores of each instance in the
+        inst_scores : numpy.Array
+            Array containing the importance scores of each instance in the
             given input sequences. Only calculated if instance_importance is set
             to True.
-        feat_scores : torch.Tensor
-            Tensor containing the importance scores of each feature, of each
+        feat_scores : numpy.Array
+            Array containing the importance scores of each feature, of each
             instance, in the given input sequences. Only calculated if
             feature_importance is set to True.
         '''
@@ -480,12 +504,16 @@ class ModelInterpreter:
             bkgnd_data, _ = self.create_bkgnd_test_sets()
 
         if instance_importance:
+            print('Calculating instance importance scores...')
             # Calculate the scores of importance of each instance
             self.inst_scores = self.instance_importance(test_data, x_lengths_test, see_progress)
 
         if feature_importance:
+            print('Calculating feature importance scores...')
             # Calculate the scores of importance of each feature in each instance
-            self.feat_scores = self.feature_importance(bkgnd_data, test_data, x_lengths_test, fast_calc)
+            self.feat_scores = self.feature_importance(bkgnd_data, test_data, x_lengths_test, fast_calc, see_progress)
+
+        print('Done!')
 
         if instance_importance and feature_importance:
             return self.inst_scores, self.feat_scores

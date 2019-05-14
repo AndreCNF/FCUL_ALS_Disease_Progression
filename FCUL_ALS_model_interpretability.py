@@ -35,6 +35,8 @@ from tqdm import tqdm_notebook   # tqdm allows to track code execution progress
 import torch                     # PyTorch to create and apply deep learning models
 from torch.utils.data.sampler import SubsetRandomSampler
 import shap                      # Model-agnostic interpretability package inspired on Shapley values
+import pickle                    # Save python objects in files
+from datetime import datetime    # datetime to use proper date and time formats
 import utils                     # Contains auxiliary functions
 from Time_Series_Dataset import Time_Series_Dataset # Dataset subclass which allows the creation of Dataset objects
 from ModelInterpreter import ModelInterpreter # Class that enables the interpretation of models that handle variable sequence length input data
@@ -285,6 +287,28 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 
 interpreter = ModelInterpreter(model, data, seq_len_dict, fast_calc=False, SHAP_bkgnd_samples=200)
 
-interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features, instance_importance=True, feature_importance=True)
+# + {"pixiedust": {"displayParams": {}}}
+interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:2, :, :], instance_importance=True, feature_importance=True)
+
+# +
+# Get the current day and time to attach to the saved model's name
+current_datetime = datetime.now().strftime('%d_%m_%Y_%H_%M')
+
+# Path where the model interpreter will be saved
+interpreter_path = 'GitHub/FCUL_ALS_Disease_Progression/interpreters/'
+
+# Filename and path where the model will be saved
+interpreter_filename = f'{interpreter_path}checkpoint_{current_datetime}.pickle'
+
+# Save model interpreter object, with the instance and feature importance scores, in a pickle file
+with open(interpreter_filename, 'wb') as file:
+    pickle.dump(interpreter, file)
+# -
+
+# Load saved model interpreter object
+with open(interpreter_filename, 'rb') as file:
+    interpreter_loaded = pickle.load(file)
+
+np.array_equal(interpreter_loaded.feat_scores, interpreter.feat_scores)
 
 

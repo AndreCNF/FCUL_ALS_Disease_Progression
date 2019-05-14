@@ -691,8 +691,28 @@ def sort_by_seq_len(data, seq_len_dict, id_column=0):
 
 
 def in_ipynb():
-    '''Detect if code is running in a IPython notebook, such as in Jupyter Lab'''
+    '''Detect if code is running in a IPython notebook, such as in Jupyter Lab.'''
     return str(type(get_ipython())) == "<class 'ipykernel.zmqshell.ZMQInteractiveShell'>"
+
+
+def pad_list(x_list, length, padding_value=999999):
+    '''Pad a list with a specific padding value until the desired length is
+    met.
+
+    Parameters
+    ----------
+    x_list : list
+        List which will be padded.
+    length : int
+        Desired length for the final padded list.
+    padding_value :
+        Value to use in the padding, to fill the list.
+
+    Returns
+    -------
+    x_list : list
+        Resulting padded list'''
+    return x_list + [padding_value] * (length - len(x_list))
 
 
 def model_inference(model, dataloader, seq_len_dict, data=None, metrics=['loss', 'accuracy', 'AUC'],
