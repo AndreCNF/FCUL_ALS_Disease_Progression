@@ -32,7 +32,8 @@ def pad_list(x_list, length, padding_value=999999):
 
 class ModelInterpreter:
     def __init__(self, model, data, seq_len_dict=None, id_column=0, inst_column=1,
-                 fast_calc=True, SHAP_bkgnd_samples=1000, random_seed=42):
+                 fast_calc=True, SHAP_bkgnd_samples=1000, random_seed=42,
+                 feat_names=None, padding_value=999999):
         '''A machine learning model interpreter which calculates instance and
         feature importance.
 
@@ -71,6 +72,12 @@ class ModelInterpreter:
             explainer is applied (fast_calc must be set to False).
         random_seed : integer, default 42
             Seed used when shuffling the data.
+        feat_names : list of string, default None
+            Column names of the dataframe associated to the data. If no list is
+            provided, the dataframe should be given in the data argument, so as
+            to fetch the names of the columns.
+        padding_value : numeric
+            Value to use in the padding, to fill the sequences.
         '''
         # Initialize parameters according to user input
         self.model = model
@@ -80,13 +87,15 @@ class ModelInterpreter:
         self.fast_calc = fast_calc
         self.SHAP_bkgnd_samples = SHAP_bkgnd_samples
         self.random_seed = random_seed
+        self.feat_names = feat_names
+        self.padding_value = padding_value
 
         if type(data) is torch.Tensor:
             self.data = data
         elif type(data) is pd.DataFrame:
             n_ids = data.iloc[:, self.id_column].nunique()      # Total number of unique sequence identifiers
             n_features = len(data.columns)                      # Number of input features
-            padding_value = 999999                              # Value to be used in the padding
+            self.padding_value = 999999                         # Value to be used in the padding
 
             # Find the sequence lengths of the data
             self.seq_len_dict = self.calc_seq_len_dict(data)
@@ -94,6 +103,12 @@ class ModelInterpreter:
             # Pad data (to have fixed sequence length) and convert into a PyTorch tensor
             self.data = utils.dataframe_to_padded_tensor(data, self.seq_len_dict, n_ids,
                                                          n_features, padding_value=padding_value)
+
+            if feat_names is None:
+                # Fetch the column names, ignoring the id and instance id ones
+                self.feat_names = list(data.columns)
+                self.feat_names = self.feat_names.remove(self.feat_names[self.id_column])
+                self.feat_names = self.feat_names.remove(self.feat_names[self.inst_column])
         else:
             raise Exception('ERROR: Invalid data type. Please provide data in a Pandas DataFrame or PyTorch Tensor format.')
 
@@ -102,6 +117,9 @@ class ModelInterpreter:
             self.progress_bar = tqdm_notebook
         else:
             self.progress_bar = tqdm
+
+        # Declare explainer attribute which will store the SHAP DEEP Explainer object
+        self.explainer = None
 
         # Declare attributes that will store importance scores (instance and feature importance)
         self.inst_scores = None
@@ -295,6 +313,12 @@ class ModelInterpreter:
         # Model output when using all the original instances in the input sequences
         ref_output = self.model(data_no_ids, x_lengths)
 
+        # Cumulative sequence lengths
+        x_lengths_cumsum = np.cumsum(x_lengths)
+
+        # Get the outputs of the last instances of each sequence
+        ref_output = ref_output[x_lengths_cumsum-1]
+
         def calc_instance_score(sequence_data, instance, ref_output, x_length):
             # Remove identifier columns from the data
             features_idx = list(range(sequence_data.shape[1]))
@@ -327,6 +351,11 @@ class ModelInterpreter:
         if see_progress:
             inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num])
                             for inst in range(x_lengths[seq_num])] for seq_num in self.progress_bar(range(data.shape[0]))]
+            # DEBUG
+            # inst_scores = []
+            # for seq_num in self.progress_bar(range(data.shape[0])):
+            #     for inst in range(x_lengths[seq_num]):
+            #         inst_scores.append(calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num]))
         else:
             inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num])
                             for inst in range(x_lengths[seq_num])] for seq_num in range(data.shape[0])]
@@ -391,15 +420,15 @@ class ModelInterpreter:
             test_data = test_data.float()
 
             # Use the background dataset to integrate over
-            explainer = shap.DeepExplainer(self.model, bkgnd_data, feedforward_args=[x_lengths_bkgnd])
+            self.explainer = shap.DeepExplainer(self.model, bkgnd_data, feedforward_args=[x_lengths_bkgnd])
 
             # Count the time that takes to calculate the SHAP values
             start_time = time.time()
 
             # Explain the predictions of the sequences in the test set
-            feat_scores = explainer.shap_values(test_data,
-                                                feedforward_args=[x_lengths_bkgnd, x_lengths],
-                                                var_seq_len=True, see_progress=True)
+            feat_scores = self.explainer.shap_values(test_data,
+                                                     feedforward_args=[x_lengths_bkgnd, x_lengths],
+                                                     var_seq_len=True, see_progress=True)
             print(f'Calculation of SHAP values took {time.time() - start_time} seconds')
             return feat_scores
 
@@ -412,7 +441,7 @@ class ModelInterpreter:
     # [Bonus TODO] Upload model explainer and interpretability plots to Comet.ml
     def interpret_model(self, bkgnd_data=None, test_data=None, new_data=False,
                         df=None, instance_importance=True, feature_importance=False,
-                        fast_calc=None, see_progress=True):
+                        fast_calc=None, see_progress=True, save_data=True):
         '''Method to calculate scores of feature and/or instance importance, in
         order to be able to interpret a model on a given data.
 
@@ -457,6 +486,10 @@ class ModelInterpreter:
         see_progress : bool, default True
             If set to True, a progress bar will show up indicating the execution
             of the instance importance scores calculations.
+        save_data : bool, default True
+            If set to True, the possible background data (used in the SHAP
+            explainer) and the test data (on which importance scores are
+            calculated) are saved as object attributes.
 
         Returns
         -------
@@ -502,6 +535,11 @@ class ModelInterpreter:
         if not fast_calc and bkgnd_data is None:
             # Get the background set from the dataset
             bkgnd_data, _ = self.create_bkgnd_test_sets()
+
+        if save_data:
+            # Save the data used in the model interpretation
+            self.bkgnd_data = bkgnd_data
+            self.bkgnd_data = test_data
 
         if instance_importance:
             print('Calculating instance importance scores...')
