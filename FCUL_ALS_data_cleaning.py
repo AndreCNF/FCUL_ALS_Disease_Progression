@@ -6,12 +6,12 @@
 #     text_representation:
 #       extension: .py
 #       format_name: light
-#       format_version: '1.3'
-#       jupytext_version: 1.0.4
+#       format_version: '1.4'
+#       jupytext_version: 1.1.3
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: fcul-als-python
 #     language: python
-#     name: python3
+#     name: fcul-als-python
 # ---
 
 # # FCUL ALS Data Cleaning
@@ -210,3 +210,7 @@ ALS_proc_df = ALS_proc_df.fillna(value=0)
 ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'niv_label']].head(20)
 
 ALS_proc_df.to_csv(f'{data_path}cleaned/FCUL_ALS_cleaned.csv')
+
+ALS_proc_df.head()
+
+ALS_proc_df.columns

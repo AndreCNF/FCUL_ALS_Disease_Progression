@@ -715,6 +715,59 @@ def pad_list(x_list, length, padding_value=999999):
     return x_list + [padding_value] * (length - len(x_list))
 
 
+def set_bar_color(values, ids, seq_len, threshold=0,
+                  neg_color='rgba(30,136,229,1)', pos_color='rgba(255,13,87,1)'):
+    '''Determine each bar's color in a bar chart, according to the values being
+    plotted and the predefined threshold.
+
+    Parameters
+    ----------
+    values : numpy.Array
+        Array containing the values to be plotted.
+    ids : int or list of ints
+        ID or list of ID's that select which time series / sequences to use in
+        the color selection.
+    seq_len : int or list of ints
+        Single or multiple sequence lengths, which represent the true, unpadded
+        size of the input sequences.
+    threshold : int or float, default 0
+        Value to use as a threshold in the plot's color selection. In other
+        words, values that exceed this threshold will have one color while the
+        remaining have a different one, as specified in the parameters.
+    pos_color : string
+        Color to use in the bars corresponding to threshold exceeding values.
+    neg_color : string
+        Color to use in the bars corresponding to values bellow the threshold.
+
+    Returns
+    -------
+    colors : list of strings
+        Resulting bar colors list.'''
+    if type(ids) is list:
+        # Create a list of lists, with the colors for each sequences' instances
+        return [[pos_color if val > 0 else neg_color for val in values[id, :seq_len]]
+                for id in ids]
+    else:
+        # Create a single list, with the colors for the sequence's instances
+        return [pos_color if val > 0 else neg_color for val in values[ids, :seq_len]]
+
+
+def configure_plotly_browser_state():
+    '''Function used to allow plotly charts to appear in notebooks.'''
+    import IPython
+    display(IPython.core.display.HTML('''
+        <script src="/static/components/requirejs/require.js"></script>
+        <script>
+          requirejs.config({
+            paths: {
+              base: '/static/base',
+              plotly: 'https://cdn.plot.ly/plotly-latest.min.js?noext',
+            },
+          });
+        </script>
+        '''))
+
+
 def model_inference(model, dataloader, seq_len_dict, data=None, metrics=['loss', 'accuracy', 'AUC'],
                     padding_value=999999, output_rounded=False, experiment=None, set_name='test'):
     '''Do inference on specified data using a given model.

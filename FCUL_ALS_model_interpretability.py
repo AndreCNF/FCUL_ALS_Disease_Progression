@@ -6,12 +6,12 @@
 #     text_representation:
 #       extension: .py
 #       format_name: light
-#       format_version: '1.3'
-#       jupytext_version: 1.0.4
+#       format_version: '1.4'
+#       jupytext_version: 1.1.3
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: fcul-als-python
 #     language: python
-#     name: python3
+#     name: fcul-als-python
 # ---
 
 # # FCUL ALS Model Interpretability
@@ -43,7 +43,7 @@ from ModelInterpreter import ModelInterpreter # Class that enables the interpret
 # -
 
 # Debugging packages
-import pixiedust                 # Debugging in Jupyter Notebook cells
+# import pixiedust                 # Debugging in Jupyter Notebook cells
 import numpy as np               # Math operations with NumPy to confirm model's behaviour
 import time                      # Calculate code execution time
 
@@ -285,10 +285,10 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 #
 # Using my custom class for model interpretability through instance and feature importance.
 
-interpreter = ModelInterpreter(model, data, seq_len_dict, fast_calc=False, SHAP_bkgnd_samples=200)
+interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=False, SHAP_bkgnd_samples=200)
 
 # + {"pixiedust": {"displayParams": {}}}
-interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:5, :, :], instance_importance=True, feature_importance=True)
+interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:1, :, :], instance_importance=True, feature_importance=True)
 
 # +
 # Get the current day and time to attach to the saved model's name
@@ -363,6 +363,8 @@ shap.force_plot(0.2,
 # -
 # ### Instance importance plots
 
+interpreter_loaded = interpreter
+
 # interpreter_loaded.inst_scores[interpreter_loaded.inst_scores == interpreter_loaded.padding_value]
 interpreter_loaded.inst_scores[interpreter_loaded.inst_scores == 999999] = np.nan
 interpreter_loaded.inst_scores
@@ -408,6 +410,16 @@ layout = go.Layout(
                   )
 fig = go.Figure(data, layout)
 py.iplot(fig)
+
+# +
+# Choosing which example to use
+patient = 0
+
+# True sequence length of the current patient's data
+seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
+
+# Plot the instance importance of one sequence
+interpreter.instance_importance_plot(test_features_denorm, interpreter.inst_scores, patient, seq_len)
 # -
 
 # **Comments:**
