@@ -20,3 +20,4 @@ Matplotlib_venv/
 .ipynb_checkpoints/FCUL_ALS_model_interpretability-checkpoint.py
 .vscode/settings.json
 *.pickle
+.ipynb_checkpoints/visualisation_experiments-checkpoint.ipynb

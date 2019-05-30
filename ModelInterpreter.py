@@ -533,11 +533,6 @@ class ModelInterpreter:
         if seq_len is None:
             seq_len = self.seq_len_dict[orig_data[id, 0, self.id_column].item()]
 
-        # If running on a notebook, a configuration must be executed for the plot
-        # to show up properly
-        if utils.in_ipynb():
-            utils.configure_plotly_browser_state()
-
         # Plot the instance importance of one sequence
         plot_data = [go.Bar(
                         x = list(range(seq_len)),
