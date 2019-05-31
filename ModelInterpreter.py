@@ -270,7 +270,8 @@ class ModelInterpreter:
         inst_scores = np.array(inst_scores)
         return inst_scores
 
-    def feature_importance(self, bkgnd_data=None, test_data=None, x_lengths=None, fast_calc=None, see_progress=True):
+    def feature_importance(self, bkgnd_data=None, test_data=None, x_lengths=None,
+                           fast_calc=None, see_progress=True):
         '''Calculate the feature importance scores to interpret the impact
         of each feature in each instance's output.
 
@@ -474,8 +475,9 @@ class ModelInterpreter:
 
 
     def instance_importance_plot(self, orig_data=None, inst_scores=None, id=None,
-                                 pred_prob=None, show_pred_prob=True, seq_len=None,
-                                 threshold=0, get_fig_obj=False, tensor_idx=True):
+                                 pred_prob=None, show_pred_prob=True, labels=None,
+                                 seq_len=None, threshold=0, get_fig_obj=False,
+                                 tensor_idx=True):
         '''Create a bar chart that allows visualizing instance importance scores.
 
         Parameters
@@ -487,13 +489,16 @@ class ModelInterpreter:
             Array containing the instance importance scores to be plotted.
         id : int, default None
             ID or sequence index that select which time series / sequences to
-            use in the plot.
+            use in the plot. If it's a single value, the method plots a single
         pred_prob : numpy.Array or torch.Tensor or list of floats, default None
             Array containing the prediction probabilities for each sequence in
             the input data (orig_data). Only relevant if show_pred_prob is True.
         show_pred_prob : bool, default True
             If set to true, a percentage bar chart will be shown to the right of
             the standard instance importance plot.
+        labels : torch.Tensor, default None
+            Labels corresponding to the data used, either specified in the input
+            or all the data that the interpreter has.
         seq_len : int, default None
             Sequence lengths which represent the true, unpadded size of the
             input sequences.
@@ -514,12 +519,12 @@ class ModelInterpreter:
         fig : plotly.graph_objs.Figure or None
             If argument get_fig_obj is set to True, the figure object is returned.
             Otherwise, nothing is returned, only the plot is showned.'''
-        # if is not tensor_idx:
-        # [TODO] Search for the index associated to the specific ID asked for by the user
-
         if orig_data is None:
             # Use all the data if none was specified
             orig_data = self.data
+
+            if labels is None:
+                labels = self.labels
 
         if inst_scores is None:
             if self.inst_scores is None:
@@ -528,10 +533,38 @@ class ModelInterpreter:
             # Use all the previously calculated scores if none were specified
             inst_scores = self.inst_scores
 
-        if len(inst_scores.shape) == 1:
+        # Plot the instance importance of multiple sequences
+        # Convert the instance scores data into a NumPy array
+        if type(inst_scores) is torch.Tensor:
+            inst_scores = inst_scores.detach().numpy()
+        elif type(inst_scores) is list:
+            inst_scores = np.array(inst_scores)
+
+        if pred_prob is None and show_pred_prob is True:
+            if labels is None:
+                raise Exception('ERROR: By setting show_pred_prob to True, either the prediction probabilities (pred_prob) or the labels must be provided.')
+
+            # Calculate the prediction probabilities for the provided data
+            pred_prob, _ = utils.model_inference(self.model, self.seq_len_dict,
+                                                 data=(orig_data, labels),
+                                                 metrics=[''], seq_final_outputs=True)
+
+        # Convert the prediction probability data into a NumPy array
+        if type(pred_prob) is torch.Tensor:
+            pred_prob = pred_prob.detach().numpy()
+        elif type(pred_prob) is list:
+            pred_prob = np.array(pred_prob)
+
+        # if is not tensor_idx:
+        # [TODO] Search for the index associated to the specific ID asked for by the user
+        # [TODO] Allow to search for multiple indeces and generate a multiple patients time series plot from it
+
+        if len(inst_scores.shape) == 1 or (id is not None and type(id) is not list):
             # True sequence length of the current id's data
             if seq_len is None:
                 seq_len = self.seq_len_dict[orig_data[id, 0, self.id_column].item()]
+
+            # [TODO] Add a prediction probability bar plot like in the multiple sequences case
 
             # Plot the instance importance of one sequence
             plot_data = [go.Bar(
@@ -548,22 +581,18 @@ class ModelInterpreter:
                                 yaxis=dict(title='Importance scores')
                               )
         else:
-            # Plot the instance importance of multiple sequences
-            # Convert the instance scores data into a NumPy array
-            if type(inst_scores) is torch.Tensor:
-                inst_scores = inst_scores.to_numpy()
-            elif type(inst_scores) is list:
-                inst_scores = np.array(inst_scores)
+            if id is None:
+                # Use all the sequences data if a subset isn't specified
+                id = list(range(inst_scores.shape[0]))
 
-            # Convert the prediction probability data into a NumPy array
-            if type(pred_prob) is torch.Tensor:
-                pred_prob = pred_prob.to_numpy()
-            elif type(pred_prob) is list:
-                pred_prob = np.array(pred_prob)
+            # Select the desired data according to the specified IDs
+            inst_scores = inst_scores[id, :]
+            orig_data = orig_data[id, :, :]
+            pred_prob = pred_prob[id]
 
             # Unique patient ids in string format
-            patients = [str(item) for item in set([tensor.item()
-                        for tensor in list(orig_data[:, self.id_column])])]
+            patients = [str(int(item)) for item in set([tensor.item()
+                        for tensor in list(orig_data[:, 0, self.id_column])])]
 
             # Sequence instances count, used as X in the plot
             seq_insts_x = [list(range(inst_scores.shape[1]))
@@ -584,10 +613,10 @@ class ModelInterpreter:
 
             for i in range(inst_scores.shape[0]):
                 for j in range(inst_scores.shape[1]):
-                    if inst_scores[i, j] is self.padding_value:
+                    if inst_scores[i, j] == self.padding_value:
                         # Delete elements that represent paddings, not real instances
-                        del x[i*inst_scores.shape[1]+j-count]
-                        del y[i*inst_scores.shape[1]+j-count]
+                        del seq_insts_x[i*inst_scores.shape[1]+j-count]
+                        del patients_y[i*inst_scores.shape[1]+j-count]
                         del colors[i*inst_scores.shape[1]+j-count]
 
                         # Increment the counting of already deleted items
@@ -605,18 +634,21 @@ class ModelInterpreter:
             # Height of the shapes (y length)
             step = 0.5
 
+            # Maximum width of the shapes
+            max_width = 1
+
             for i in range(len(patients)):
                 # Set the starting x coordinate to after the last data point
                 x0 = inst_scores.shape[1]
 
                 # Set the filling length of the shape
-                x1_fill = x0 + pred_prob[i]
+                x1_fill = x0 + pred_prob[i] * max_width
 
                 shape_unfilled = {
                                     'type': 'rect',
                                     'x0': x0,
                                     'y0': y0,
-                                    'x1': x0 + 1,
+                                    'x1': x0 + max_width,
                                     'y1': y0 + step,
                                     'line': {
                                                 'color': 'rgba(0, 0, 0, 1)',
@@ -638,6 +670,18 @@ class ModelInterpreter:
                 # Set the starting y coordinate for the next shapes
                 y0 = y0 + 2 * step
 
+            # Getting points along the percentage bar plots
+            x_range = [list(np.array(range(0, 10, 1))*0.1+inst_scores.shape[1]) for idx in range(len(patients))]
+
+            # Flatten the list
+            text_x = [item for sublist in x_range for item in sublist]
+
+            # Y coordinates of the prediction probability text
+            text_y = [patient for patient in patients for idx in range(10)]
+
+            # Prediction probabilities in text form, to appear in the plot
+            text_content = [pred_prob[idx] for idx in range(len(pred_prob)) for i in range(10)]
+
             plot_data = [{"x": seq_insts_x,
                           "y": patients_y,
                           "marker": dict(color=colors, size=12,
@@ -656,11 +700,11 @@ class ModelInterpreter:
                                      y=text_y,
                                      text=text_content,
                                      mode='text',
-                                     textfont=dict(color='#ffffff'),
+                                     textfont=dict(size = 1, color='#ffffff'),
                                      hoverinfo='text'
                          )]
             layout = go.Layout(
-                                title="Patients list test",
+                                title="Patients time series",
                                 xaxis=dict(
                                             title="Instance",
                                             showgrid=False,
@@ -669,7 +713,8 @@ class ModelInterpreter:
                                 yaxis=dict(
                                             title="Patient ID",
                                             showgrid=False,
-                                            zeroline=False
+                                            zeroline=False,
+                                            type='category'
                                           ),
                                 hovermode="closest",
                                 shapes=shapes_list,

@@ -171,12 +171,12 @@ x_lengths_test = [x_lengths_test[idx] for idx in data_sorted_idx]
 
 # Sort the features and labels by descending sequence length
 test_data_exp = test_features[data_sorted_idx, :, :]
-test_labels = test_labels[data_sorted_idx, :]
+test_labels_ = test_labels[data_sorted_idx, :]
 
 # +
 # Adjust the labels so that it gets the exact same shape as the predictions
 # (i.e. sequence length = max sequence length of the current batch, not the max of all the data)
-labels = torch.nn.utils.rnn.pack_padded_sequence(test_labels, x_lengths_test, batch_first=True)
+labels = torch.nn.utils.rnn.pack_padded_sequence(test_labels_, x_lengths_test, batch_first=True)
 labels, _ = torch.nn.utils.rnn.pad_packed_sequence(labels, batch_first=True, padding_value=999999)
 
 mask = (labels <= 1).view(-1, 1).float()                    # Create a mask by filtering out all labels that are not a padding value
@@ -371,9 +371,6 @@ inst_scores_avg = np.nanmean(interpreter_loaded.inst_scores, axis=0)
 
 list(range(1, len(inst_scores_avg)+1))
 
-# +
-configure_plotly_browser_state()
-
 data = [go.Bar(
                 x=list(range(1, len(inst_scores_avg[:20])+1)),
                 y=list(inst_scores_avg[:20])
@@ -481,15 +478,20 @@ x_lengths_test_cumsum_shifted
 
 output[x_lengths_test_cumsum-1]
 
-pred_prob, _ = utils.model_inference(interpreter.model, interpreter.seq_len_dict, data=(test_features[:10, :, :], test_labels[:10]))
+pred_prob, _ = utils.model_inference(interpreter.model, interpreter.seq_len_dict, data=(test_features[:10], test_labels[:10]),
+                                     metrics=[''], seq_final_outputs=True)
 pred_prob
 
 pred_prob.shape
 
-test_features_denorm.shape
+test_features[:10].shape
 
-interpreter.instance_importance_plot(test_features_denorm, interpreter.inst_scores, pred_prob=pred_prob)
+interpreter.inst_scores.shape
+
+interpreter.instance_importance_plot(test_features[:10], interpreter.inst_scores, pred_prob=pred_prob)
 
 len(interpreter.inst_scores.shape)
+
+type(None) is list
 
 
