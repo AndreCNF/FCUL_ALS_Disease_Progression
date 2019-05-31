@@ -50,6 +50,14 @@ version = "0.4.1"
 
 [[package]]
 category = "main"
+description = "Color scales for IPython notebook"
+name = "colorlover"
+optional = false
+python-versions = "*"
+version = "0.3.0"
+
+[[package]]
+category = "main"
 description = "Python Git Library"
 name = "comet-git-pure"
 optional = false
@@ -84,18 +92,6 @@ version = ">=1.0.1"
 
 [[package]]
 category = "main"
-description = "Config file reading, writing and validation."
-marker = "python_version >= \"3.0\" and extra == \"ini\""
-name = "configobj"
-optional = false
-python-versions = "*"
-version = "5.0.6"
-
-[package.dependencies]
-six = "*"
-
-[[package]]
-category = "main"
 description = "Composable style cycles"
 name = "cycler"
 optional = false
@@ -121,9 +117,6 @@ name = "everett"
 optional = false
 python-versions = "*"
 version = "1.0.2"
-
-[package.dependencies]
-configobj = "*"
 
 [[package]]
 category = "main"
@@ -609,7 +602,7 @@ python-versions = "*"
 version = "1.0.2"
 
 [metadata]
-content-hash = "c8d82c4d738a8c0881b7c2ba2f7a71a5efcf70ada286d4a2bc9b5fcca182ecf6"
+content-hash = "a1b6129208606fc3d20e038da833afa85f516bf5bc0ca4f50d714ffc0271d854"
 python-versions = "^3.6"
 
 [metadata.hashes]
@@ -619,9 +612,9 @@ backcall = ["38ecd85be2c1e78f77fd91700c76e14667dc21e2713b63876c0eb901196e01e4", 
 certifi = ["59b7658e26ca9c7339e00f8f4636cdfe59d34fa37b9b04f6f9e9926b3cece1a5", "b26104d6835d1f5e49452a26eb2ff87fe7090b89dfcaee5ea2212697e1e1d7ae"]
 chardet = ["84ab92ed1c4d4f16916e05906b6b75a6c0fb5db821cc65e70cbd64a3e2a5eaae", "fc323ffcaeaed0e0a02bf4d117757b98aed530d9ed4531e3e15460124c106691"]
 colorama = ["05eed71e2e327246ad6b38c540c4a3117230b19679b875190486ddd2d721422d", "f8ac84de7840f5b9c4e3347b3c1eaa50f7e49c2b07596221daec5edaabbd7c48"]
+colorlover = ["58705cdd1f1c3903b5cbc15ac5ad816779363400a74e5f407563b0b3627902e5", "b8fb7246ab46e1f5e6715649453c1762e245a515de5ff2d2b4aab7a6e67fa4e2"]
 comet-git-pure = ["299167d42f8db46ffd3616fdd4200e776d3d22b6be077cfa53db81b90a2afceb", "b3a739ef67e6bcd9f15a93ea557794eda63680859c987718f6ca423b01cb7919"]
 comet-ml = ["731e22a55c9f0262a831f1da8854064107134958fdbc13183923f5a59222d6e4", "c4a2f806c4cc83e990770c1cedfca4eb948b3554c0fd30f70e75969aa96c3afe"]
-configobj = ["a2f5650770e1c87fb335af19a9b7eb73fc05ccf22144eb68db7d00cd2bcb0902"]
 cycler = ["1d8a5ae1ff6c5cf9b93e8811e581232ad8920aeec647c37316ceac982b08cb2d", "cd7b2d1018258d7247a71425e9f26463dfb444d411c39569972f4ce586b0c9d8"]
 decorator = ["86156361c50488b84a3f148056ea716ca587df2f0de1d34750d35c21312725de", "f069f3a01830ca754ba5258fde2278454a0b5b79e0d7f5c13b3b97e57d4acff6"]
 everett = ["66c7991c056fd9b1de54c29e2b5004a30209530faef698d6ecfbf24bfbbdd1fb", "8a5ee8cdde0ed6b3bbb63249e0e0703d4ad91921107ff198e0868ffce5f7b6bc"]

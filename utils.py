@@ -301,7 +301,7 @@ def dataframe_to_padded_tensor(df, seq_len_dict, n_ids, n_inputs, id_column='sub
     # Making a padded numpy array version of the dataframe (all index has the same sequence length as the one with the max)
     arr = np.ones((n_ids, max_seq_len, n_inputs)) * padding_value
 
-    # Iterator that gives each unique identifier (e.g. each patient in the dataset)
+    # Iterator that outputs each unique identifier (e.g. each patient in the dataset)
     id_iter = iter(df[id_column].unique())
 
     # Count the iterations of ids
@@ -653,7 +653,7 @@ def load_checkpoint(filepath):
     return model
 
 
-def sort_by_seq_len(data, seq_len_dict, id_column=0):
+def sort_by_seq_len(data, seq_len_dict, labels=None, id_column=0):
     '''Sort the data by sequence length in order to correctly apply it to a
     PyTorch neural network.
 
@@ -665,6 +665,9 @@ def sort_by_seq_len(data, seq_len_dict, id_column=0):
         Dictionary containing the sequence lengths for each index of the
         original dataframe. This allows to ignore the padding done in
         the fixed sequence length tensor.
+    labels : torch.Tensor, default None
+        Labels corresponding to the data used, either specified in the input
+        or all the data that the interpreter has.
     id_column : int, default 0
         Number of the column which corresponds to the subject identifier in
         the data tensor.
@@ -673,6 +676,9 @@ def sort_by_seq_len(data, seq_len_dict, id_column=0):
     -------
     sorted_data : torch.Tensor, default None
         Data tensor already sorted by sequence length.
+    sorted_labels : torch.Tensor, default None
+        Labels tensor already sorted by sequence length. Only outputed if the
+        labels data is specified in the input.
     x_lengths : list of int
         Sorted list of sequence lengths, relative to the input data.
     '''
@@ -687,7 +693,13 @@ def sort_by_seq_len(data, seq_len_dict, id_column=0):
 
     # Sort the data by descending sequence length
     sorted_data = data[data_sorted_idx, :, :]
-    return sorted_data, x_lengths
+
+    if labels is None:
+        return sorted_data, x_lengths
+    else:
+        # Sort the labels by descending sequence length
+        sorted_labels = labels[data_sorted_idx, :]
+        return sorted_data, sorted_labels,  x_lengths
 
 
 def in_ipynb():
@@ -768,25 +780,26 @@ def configure_plotly_browser_state():
         '''))
 
 
-def model_inference(model, dataloader, seq_len_dict, data=None, metrics=['loss', 'accuracy', 'AUC'],
-                    padding_value=999999, output_rounded=False, experiment=None, set_name='test'):
+def model_inference(model, seq_len_dict, dataloader=None, data=None, metrics=['loss', 'accuracy', 'AUC'],
+                    padding_value=999999, output_rounded=False, experiment=None, set_name='test',
+                    seq_final_outputs=False):
     '''Do inference on specified data using a given model.
 
     Parameters
     ----------
     model : torch.nn.Module
         Neural network model which does the inference on the data.
-    dataloader : torch.utils.data.DataLoader
-        Data loader which will be used to get data batches during inference.
-    data : tuple of torch.Tensor, default None
-        If a data loader isn't specified, the user can input directly a
-        tuple of PyTorch tensor on which inference will be done. The first
-        tensor must correspond to the features tensor while the second one
-        should be the labels tensor.
     seq_len_dict : dict
         Dictionary containing the sequence lengths for each index of the
         original dataframe. This allows to ignore the padding done in
         the fixed sequence length tensor.
+    dataloader : torch.utils.data.DataLoader, default None
+        Data loader which will be used to get data batches during inference.
+    data : tuple of torch.Tensor, default None
+        If a data loader isn't specified, the user can input directly a
+        tuple of PyTorch tensor on which inference will be done. The first
+        tensor must correspond to the features tensor whe second one
+        should be the labels tensor.
     metrics : list of strings, default ['loss', 'accuracy', 'AUC'],
         List of metrics to be used to evaluate the model on the infered data.
         Available metrics are cross entropy loss (loss), accuracy, AUC
@@ -804,7 +817,9 @@ def model_inference(model, dataloader, seq_len_dict, data=None, metrics=['loss',
     set_name : str
         Defines what name to give to the set when uploading the metrics
         values to the specified Comet.ml experiment.
-
+    seq_final_outputs : bool, default False
+        If set to true, the function only returns the ouputs given at each
+        sequence's end.
 
     Returns
     -------
@@ -840,12 +855,9 @@ def model_inference(model, dataloader, seq_len_dict, data=None, metrics=['loss',
     # Check if the user wants to do inference directly on a PyTorch tensor
     if dataloader is None and data is not None:
         features, labels = data[0].float(), data[1].float()             # Make the data have type float instead of double, as it would cause problems
-        x_lengths = [seq_len_dict[patient] for patient in list(features[:, 0, 0].numpy())]  # Get the original lengths of the sequences
-        data_sorted_idx = list(np.argsort(x_lengths)[::-1])             # Sorted indeces to get the data sorted by sequence length
-        x_lengths = [x_lengths[idx] for idx in data_sorted_idx]         # Sort the x_lengths array by descending sequence length
-        features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
-        labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
-        scores = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
+        features, labels, x_lengths = sort_by_seq_len(features, seq_len_dict, labels) # Sort the data by sequence length
+        # [TODO] Replace the hardcoded "2:" bellow with code flexible to different column indeces (like I did in the model interpreter instance importance method)
+        scores = model.forward(features[:, :, 2:], x_lengths)           # Feedforward the data through the model
                                                                         # (the 2 is there to avoid using the identifier features in the predictions)
 
         # Adjust the labels so that it gets the exact same shape as the predictions
@@ -864,6 +876,14 @@ def model_inference(model, dataloader, seq_len_dict, data=None, metrics=['loss',
         else:
             # Get the model scores (class probabilities)
             output = unpadded_scores
+
+        if seq_final_outputs:
+            # Only get the outputs retrieved at the sequences' end
+            # Cumulative sequence lengths
+            x_lengths_cumsum = np.cumsum(x_lengths)
+
+            # Get the outputs of the last instances of each sequence
+            output = output[x_lengths_cumsum-1]
 
         if any(mtrc in metrics for mtrc in ['precision', 'recall', 'F1']):
             # Calculate the number of true positives, false negatives, true negatives and false positives
@@ -904,11 +924,7 @@ def model_inference(model, dataloader, seq_len_dict, data=None, metrics=['loss',
         # Turn off gradients, saves memory and computations
         with torch.no_grad():
             features, labels = features.float(), labels.float()             # Make the data have type float instead of double, as it would cause problems
-            x_lengths = [seq_len_dict[patient] for patient in list(features[:, 0, 0].numpy())]  # Get the original lengths of the sequences
-            data_sorted_idx = list(np.argsort(x_lengths)[::-1])             # Sorted indeces to get the data sorted by sequence length
-            x_lengths = [x_lengths[idx] for idx in data_sorted_idx]         # Sort the x_lengths array by descending sequence length
-            features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
-            labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
+            features, labels, x_lengths = sort_by_seq_len(features, seq_len_dict, labels) # Sort the data by sequence length
             scores = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
                                                                             # (the 2 is there to avoid using the identifier features in the predictions)
 
@@ -928,6 +944,14 @@ def model_inference(model, dataloader, seq_len_dict, data=None, metrics=['loss',
             else:
                 # Get the model scores (class probabilities)
                 output = torch.cat([output.float(), unpadded_scores])
+
+            if seq_final_outputs:
+                # Only get the outputs retrieved at the sequences' end
+                # Cumulative sequence lengths
+                x_lengths_cumsum = np.cumsum(x_lengths)
+
+                # Get the outputs of the last instances of each sequence
+                output = output[x_lengths_cumsum-1]
 
             if any(mtrc in metrics for mtrc in ['precision', 'recall', 'F1']):
                 # Calculate the number of true positives, false negatives, true negatives and false positives
@@ -1095,12 +1119,8 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                 features, labels = features.cuda(), labels.cuda()           # Move data to GPU
 
             features, labels = features.float(), labels.float()             # Make the data have type float instead of double, as it would cause problems
-            x_lengths = [seq_len_dict[patient] for patient in list(features[:, 0, 0].numpy())]  # Get the original lengths of the sequences
-            data_sorted_idx = list(np.argsort(x_lengths)[::-1])             # Sorted indeces to get the data sorted by sequence length
-            x_lengths = [x_lengths[idx] for idx in data_sorted_idx]         # Sort the x_lengths array by descending sequence length
-            features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
-            labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
-            scores = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
+            features, labels, x_lengths = sort_by_seq_len(features, seq_len_dict, labels) # Sort the data by sequence length
+            scores = model.forward(features[:, :, 2:], x_lengths)           # Feedforward the data through the model
                                                                             # (the 2 is there to avoid using the identifier features in the predictions)
 
             # Adjust the labels so that it gets the exact same shape as the predictions
@@ -1132,12 +1152,8 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                 # Turn off gradients for validation, saves memory and computations
                 with torch.no_grad():
                     features, labels = features.float(), labels.float()             # Make the data have type float instead of double, as it would cause problems
-                    x_lengths = [seq_len_dict[patient] for patient in list(features[:, 0, 0].numpy())]  # Get the original lengths of the sequences
-                    data_sorted_idx = list(np.argsort(x_lengths)[::-1])             # Sorted indeces to get the data sorted by sequence length
-                    x_lengths = [x_lengths[idx] for idx in data_sorted_idx]         # Sort the x_lengths array by descending sequence length
-                    features = features[data_sorted_idx, :, :]                      # Sort the features by descending sequence length
-                    labels = labels[data_sorted_idx, :]                             # Sort the labels by descending sequence length
-                    scores = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
+                    features, labels, x_lengths = sort_by_seq_len(features, seq_len_dict, labels) # Sort the data by sequence length
+                    scores = model.forward(features[:, :, 2:], x_lengths)           # Feedforward the data through the model
                                                                                     # (the 2 is there to avoid using the identifier features in the predictions)
 
                     # Adjust the labels so that it gets the exact same shape as the predictions

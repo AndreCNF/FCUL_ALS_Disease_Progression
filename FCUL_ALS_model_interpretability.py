@@ -43,7 +43,7 @@ from ModelInterpreter import ModelInterpreter # Class that enables the interpret
 # -
 
 # Debugging packages
-# import pixiedust                 # Debugging in Jupyter Notebook cells
+import pixiedust                 # Debugging in Jupyter Notebook cells
 import numpy as np               # Math operations with NumPy to confirm model's behaviour
 import time                      # Calculate code execution time
 
@@ -149,14 +149,12 @@ train_indices, val_indices, test_indices            = utils.create_train_sets(da
                                                                               batch_size=1000, get_indeces=True)
 
 # Get the tensor data of the training and test sets
-# train_data = data[train_indices]
-# test_data = data[test_indices]
 train_features, train_labels = next(iter(train_dataloader))
 test_features, test_labels = next(iter(test_dataloader))
 
 # ## Confirm performance metrics
 
-output, metrics_vals = utils.model_inference(model, test_dataloader, seq_len_dict, 
+output, metrics_vals = utils.model_inference(model, seq_len_dict, dataloader=test_dataloader, 
                        metrics=['loss', 'accuracy', 'AUC', 'precision', 'recall', 'F1'], output_rounded=True)
 
 metrics_vals
@@ -200,8 +198,8 @@ list(np.diff(unpadded_labels.int().numpy()))
 # ## SHAP
 
 # Get the original lengths of the sequences and sort the data
-train_features, x_lengths_train = utils.sort_by_seq_len(train_features, seq_len_dict)
-test_features, x_lengths_test = utils.sort_by_seq_len(test_features, seq_len_dict)
+train_features, train_labels, x_lengths_train = utils.sort_by_seq_len(train_features, seq_len_dict, labels=train_labels)
+test_features, test_labels, x_lengths_test = utils.sort_by_seq_len(test_features, seq_len_dict, labels=test_labels)
 
 # + {"pixiedust": {"displayParams": {}}}
 # Use the first n_bkgnd_samples training examples as our background dataset to integrate over
@@ -288,7 +286,7 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=False, SHAP_bkgnd_samples=200)
 
 # + {"pixiedust": {"displayParams": {}}}
-interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:1, :, :], instance_importance=True, feature_importance=True)
+interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:10, :, :], test_labels=test_labels[:10, :], instance_importance=True, feature_importance=False)
 
 # +
 # Get the current day and time to attach to the saved model's name
@@ -482,5 +480,16 @@ x_lengths_test_cumsum_shifted[0] = 0
 x_lengths_test_cumsum_shifted
 
 output[x_lengths_test_cumsum-1]
+
+pred_prob, _ = utils.model_inference(interpreter.model, interpreter.seq_len_dict, data=(test_features[:10, :, :], test_labels[:10]))
+pred_prob
+
+pred_prob.shape
+
+test_features_denorm.shape
+
+interpreter.instance_importance_plot(test_features_denorm, interpreter.inst_scores, pred_prob=pred_prob)
+
+len(interpreter.inst_scores.shape)
 
 

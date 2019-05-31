@@ -7,9 +7,11 @@ from tqdm import tqdm                   # tqdm allows to track code execution pr
 from tqdm import tqdm_notebook          # tqdm allows to track code execution progress
 import time                             # Calculate code execution time
 import utils                            # Contains auxiliary functions
+from Time_Series_Dataset import Time_Series_Dataset     # Dataset subclass which allows the creation of Dataset objects
 import plotly                           # Plotly for interactive and pretty plots
 import plotly.graph_objs as go
 import plotly.offline as py
+import colorlover as cl                 # Get colors from colorscales
 
 if utils.in_ipynb:
     plotly.offline.init_notebook_mode(connected=True)
@@ -19,7 +21,7 @@ POS_COLOR = 'rgba(255,13,87,1)'
 NEG_COLOR = 'rgba(30,136,229,1)'
 
 class ModelInterpreter:
-    def __init__(self, model, data, seq_len_dict=None, id_column=0, inst_column=1,
+    def __init__(self, model, data, labels, seq_len_dict=None, id_column=0, inst_column=1,
                  fast_calc=True, SHAP_bkgnd_samples=1000, random_seed=42,
                  feat_names=None, padding_value=999999):
         '''A machine learning model interpreter which calculates instance and
@@ -39,6 +41,9 @@ class ModelInterpreter:
             background data in methods such as SHAP explainers. The data will be
             used in PyTorch tensor format, but the user can submit it as a
             pandas dataframe, which is then automatically padded and converted.
+        labels : torch.Tensor, default None
+            Labels corresponding to the data used, either specified in the input
+            or all the data that the interpreter has.
         seq_len_dict : dict, default None
             Dictionary containing the sequence lengths for each index of the
             original dataframe. This allows to ignore the padding done in
@@ -80,6 +85,7 @@ class ModelInterpreter:
 
         if type(data) is torch.Tensor:
             self.data = data
+            self.labels = labels
         elif type(data) is pd.DataFrame:
             n_ids = data.iloc[:, self.id_column].nunique()      # Total number of unique sequence identifiers
             n_features = len(data.columns)                      # Number of input features
@@ -89,8 +95,13 @@ class ModelInterpreter:
             self.seq_len_dict = self.calc_seq_len_dict(data)
 
             # Pad data (to have fixed sequence length) and convert into a PyTorch tensor
-            self.data = utils.dataframe_to_padded_tensor(data, self.seq_len_dict, n_ids,
-                                                         n_features, padding_value=padding_value)
+            data_tensor = utils.dataframe_to_padded_tensor(data, self.seq_len_dict, n_ids,
+                                                           n_features, padding_value=padding_value)
+
+            # Separate labels from features
+            dataset = Time_Series_Dataset(data_tensor, data)
+            self.data = dataset.X
+            self.labels = dataset.y
 
             if feat_names is None:
                 # Fetch the column names, ignoring the id and instance id ones
@@ -168,40 +179,7 @@ class ModelInterpreter:
         seq_len_dict = dict([(idx, val[0]) for idx, val in list(zip(seq_len_df.index, seq_len_df.values))])
         return seq_len_dict
 
-    def sort_by_seq_len(self, data, seq_len_dict=None):
-        '''Sort the data by sequence length in order to correctly apply it to a
-        PyTorch neural network.
-
-        Parameters
-        ----------
-        data : torch.Tensor, default None
-            Data tensor on which sorting by sequence length will be applied.
-
-        Returns
-        -------
-        sorted_data : torch.Tensor, default None
-            Data tensor already sorted by sequence length.
-        x_lengths : list of int
-            Sorted list of sequence lengths, relative to the input data.
-        '''
-        if seq_len_dict is None:
-            # Use the same sequence length dictionary as the one from the original dataset
-            seq_len_dict = self.seq_len_dict
-
-        # Get the original lengths of the sequences, for the input data
-        x_lengths = [self.seq_len_dict[id] for id in list(data[:, 0, self.id_column].numpy())]
-
-        # Sorted indeces to get the data sorted by sequence length
-        data_sorted_idx = list(np.argsort(x_lengths)[::-1])
-
-        # Sort the x_lengths array by descending sequence length
-        x_lengths = [x_lengths[idx] for idx in data_sorted_idx]
-
-        # Sort the data by descending sequence length
-        sorted_data = data[data_sorted_idx, :, :]
-        return sorted_data, x_lengths
-
-    def instance_importance(self, data=None, x_lengths=None, see_progress=True):
+    def instance_importance(self, data=None, labels=None, x_lengths=None, see_progress=True):
         '''Calculate the instance importance scores to interpret the impact of
         each instance of a sequence on the final output.
 
@@ -211,6 +189,9 @@ class ModelInterpreter:
             Optionally, the user can specify a subset of data on which model
             interpretation will be made (i.e. calculating feature and/or
             instance importance). Otherwise, all the data is used.
+        labels : torch.Tensor, default None
+            Labels corresponding to the data used, either specified in the input
+            or all the data that the interpreter has.
         x_lengths : list of int
             Sorted list of sequence lengths, relative to the input data.
         see_progress : bool, default True
@@ -226,24 +207,21 @@ class ModelInterpreter:
         if data is None:
             # If a subset of data to interpret isn't specified, the interpreter will use all the data
             data = self.data
+            labels = self.labels
 
         # Make sure that the data is in type float
         data = data.float()
 
-        # Remove identifier columns from the data
-        features_idx = list(range(data.shape[2]))
-        features_idx.remove(self.id_column)
-        features_idx.remove(self.inst_column)
-        data_no_ids = data[:, :, features_idx]
+        # # Remove identifier columns from the data
+        # features_idx = list(range(data.shape[2]))
+        # features_idx.remove(self.id_column)
+        # features_idx.remove(self.inst_column)
+        # data_no_ids = data[:, :, features_idx]
 
         # Model output when using all the original instances in the input sequences
-        ref_output = self.model(data_no_ids, x_lengths)
-
-        # Cumulative sequence lengths
-        x_lengths_cumsum = np.cumsum(x_lengths)
-
-        # Get the outputs of the last instances of each sequence
-        ref_output = ref_output[x_lengths_cumsum-1]
+        ref_output, _ = utils.model_inference(self.model, self.seq_len_dict,
+                                              data=(data, labels), metrics=[''],
+                                              seq_final_outputs=True)
 
         def calc_instance_score(sequence_data, instance, ref_output, x_length):
             # Remove identifier columns from the data
@@ -267,7 +245,7 @@ class ModelInterpreter:
 
             # Only use the last output (i.e. the one from the last instance of the sequence)
             new_output = new_output[-1].item()
-            ref_output = ref_output[-1].item()
+            ref_output = ref_output.item()
 
             # The instance importance score is then the difference between the output probability with the instance
             # and the probability without the instance
@@ -286,7 +264,7 @@ class ModelInterpreter:
             inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num])
                             for inst in range(x_lengths[seq_num])] for seq_num in range(data.shape[0])]
         # Pad the instance scores lists so that all have the same length
-        inst_scores = [utils.pad_list(scores_list, data.shape[1], padding_value=999999) for scores_list in inst_scores]
+        inst_scores = [utils.pad_list(scores_list, data.shape[1], padding_value=self.padding_value) for scores_list in inst_scores]
 
         # Convert to a NumPy array
         inst_scores = np.array(inst_scores)
@@ -332,7 +310,7 @@ class ModelInterpreter:
             print(f'Attention: you have chosen to interpret the model using SHAP, with {self.SHAP_bkgnd_samples} background samples applied to {test_data.shape[0]} test samples. This might take a while. Depending on your computer\'s processing power, you should do a coffee break or even go to sleep!')
 
             # Sort the background data by sequence length
-            bkgnd_data, x_lengths_bkgnd = self.sort_by_seq_len(bkgnd_data)
+            bkgnd_data, x_lengths_bkgnd = utils.sort_by_seq_len(bkgnd_data)
 
             # Remove identifier columns from the data
             features_idx = list(range(test_data.shape[2]))
@@ -365,7 +343,7 @@ class ModelInterpreter:
         return
 
     # [Bonus TODO] Upload model explainer and interpretability plots to Comet.ml
-    def interpret_model(self, bkgnd_data=None, test_data=None, new_data=False,
+    def interpret_model(self, bkgnd_data=None, test_data=None, test_labels=None, new_data=False,
                         df=None, instance_importance=True, feature_importance=False,
                         fast_calc=None, see_progress=True, save_data=True):
         '''Method to calculate scores of feature and/or instance importance, in
@@ -382,6 +360,9 @@ class ModelInterpreter:
             interpretation will be made (i.e. calculating feature and/or
             instance importance) as a PyTorch tensor. Otherwise, all the data is
             used.
+        test_labels : torch.Tensor, default None
+            Labels corresponding to the data used, either specified in the input
+            or all the data that the interpreter has.
         new_data : bool, default False
             If set to True, it indicates that the data that will be interpreted
             hasn't been seen before, i.e. it has different ids than those in the
@@ -436,6 +417,7 @@ class ModelInterpreter:
             if fast_calc:
                 # If a subset of data to interpret isn't specified, the interpreter will use all the data
                 test_data = self.data
+                test_labels = self.labels
             else:
                 if bkgnd_data is None:
                     # Get the background and test sets from the dataset
@@ -453,10 +435,10 @@ class ModelInterpreter:
             seq_len_dict = self.calc_seq_len_dict(df)
 
             # Sort the data by sequence length
-            test_data, x_lengths_test = self.sort_by_seq_len(test_data, seq_len_dict)
+            test_data, test_labels, x_lengths_test = utils.sort_by_seq_len(test_data, seq_len_dict, test_labels)
         else:
             # Sort the data by sequence length
-            test_data, x_lengths_test = self.sort_by_seq_len(test_data)
+            test_data, test_labels, x_lengths_test = utils.sort_by_seq_len(test_data, self.seq_len_dict, test_labels)
 
         if not fast_calc and bkgnd_data is None:
             # Get the background set from the dataset
@@ -470,7 +452,7 @@ class ModelInterpreter:
         if instance_importance:
             print('Calculating instance importance scores...')
             # Calculate the scores of importance of each instance
-            self.inst_scores = self.instance_importance(test_data, x_lengths_test, see_progress)
+            self.inst_scores = self.instance_importance(test_data, test_labels, x_lengths_test, see_progress)
 
         if feature_importance:
             print('Calculating feature importance scores...')
@@ -491,21 +473,27 @@ class ModelInterpreter:
             return
 
 
-    def instance_importance_plot(self, orig_data, values, id=None, seq_len=None,
-                                 threshold=0, get_fig_obj=False,
-                                 tensor_idx=True):
+    def instance_importance_plot(self, orig_data=None, inst_scores=None, id=None,
+                                 pred_prob=None, show_pred_prob=True, seq_len=None,
+                                 threshold=0, get_fig_obj=False, tensor_idx=True):
         '''Create a bar chart that allows visualizing instance importance scores.
 
         Parameters
         ----------
-        orig_data : torch.Tensor or numpy.Array
+        orig_data : torch.Tensor or numpy.Array, default None
             Original data used in the machine learning model. Used here to fetch
             the true ID corresponding to the plotted sequence.
-        values : numpy.Array
+        inst_scores : numpy.Array, default None
             Array containing the instance importance scores to be plotted.
         id : int, default None
             ID or sequence index that select which time series / sequences to
             use in the plot.
+        pred_prob : numpy.Array or torch.Tensor or list of floats, default None
+            Array containing the prediction probabilities for each sequence in
+            the input data (orig_data). Only relevant if show_pred_prob is True.
+        show_pred_prob : bool, default True
+            If set to true, a percentage bar chart will be shown to the right of
+            the standard instance importance plot.
         seq_len : int, default None
             Sequence lengths which represent the true, unpadded size of the
             input sequences.
@@ -529,24 +517,165 @@ class ModelInterpreter:
         # if is not tensor_idx:
         # [TODO] Search for the index associated to the specific ID asked for by the user
 
-        # True sequence length of the current id's data
-        if seq_len is None:
-            seq_len = self.seq_len_dict[orig_data[id, 0, self.id_column].item()]
+        if orig_data is None:
+            # Use all the data if none was specified
+            orig_data = self.data
 
-        # Plot the instance importance of one sequence
-        plot_data = [go.Bar(
-                        x = list(range(seq_len)),
-                        y = values[id, :seq_len],
-                        marker=dict(color=utils.set_bar_color(values, id, seq_len,
-                                                              threshold=threshold,
-                                                              pos_color=POS_COLOR,
-                                                              neg_color=NEG_COLOR))
-                      )]
-        layout = go.Layout(
-                            title=f'Instance importance scores for ID {int(orig_data[0, 0, self.id_column])}',
-                            xaxis=dict(title='Instance'),
-                            yaxis=dict(title='Importance scores')
-                          )
+        if inst_scores is None:
+            if self.inst_scores is None:
+                raise Exception('ERROR: No instance importance scores found. If the scores aren\'t specified, then they must have already been calculated through the interpret_model method.')
+
+            # Use all the previously calculated scores if none were specified
+            inst_scores = self.inst_scores
+
+        if len(inst_scores.shape) == 1:
+            # True sequence length of the current id's data
+            if seq_len is None:
+                seq_len = self.seq_len_dict[orig_data[id, 0, self.id_column].item()]
+
+            # Plot the instance importance of one sequence
+            plot_data = [go.Bar(
+                            x = list(range(seq_len)),
+                            y = inst_scores[id, :seq_len],
+                            marker=dict(color=utils.set_bar_color(inst_scores, id, seq_len,
+                                                                  threshold=threshold,
+                                                                  pos_color=POS_COLOR,
+                                                                  neg_color=NEG_COLOR))
+                          )]
+            layout = go.Layout(
+                                title=f'Instance importance scores for ID {int(orig_data[0, 0, self.id_column])}',
+                                xaxis=dict(title='Instance'),
+                                yaxis=dict(title='Importance scores')
+                              )
+        else:
+            # Plot the instance importance of multiple sequences
+            # Convert the instance scores data into a NumPy array
+            if type(inst_scores) is torch.Tensor:
+                inst_scores = inst_scores.to_numpy()
+            elif type(inst_scores) is list:
+                inst_scores = np.array(inst_scores)
+
+            # Convert the prediction probability data into a NumPy array
+            if type(pred_prob) is torch.Tensor:
+                pred_prob = pred_prob.to_numpy()
+            elif type(pred_prob) is list:
+                pred_prob = np.array(pred_prob)
+
+            # Unique patient ids in string format
+            patients = [str(item) for item in set([tensor.item()
+                        for tensor in list(orig_data[:, self.id_column])])]
+
+            # Sequence instances count, used as X in the plot
+            seq_insts_x = [list(range(inst_scores.shape[1]))
+                           for patient in range(len(patients))]
+
+            # Patients ids repeated max sequence length times, used as Y in the plot
+            patients_y = [[patient]*inst_scores.shape[1] for patient in list(patients)]
+
+            # Flatten seq_insts and patients_y
+            seq_insts_x = list(np.array(seq_insts_x).flatten())
+            patients_y = list(np.array(patients_y).flatten())
+
+            # Define colors for the data points based on their normalized scores (from 0 to 1 instead of -1 to 1)
+            colors = [(val+1)/2 for val in inst_scores.flatten()]
+
+            # Count the number of already deleted paddings
+            count = 0
+
+            for i in range(inst_scores.shape[0]):
+                for j in range(inst_scores.shape[1]):
+                    if inst_scores[i, j] is self.padding_value:
+                        # Delete elements that represent paddings, not real instances
+                        del x[i*inst_scores.shape[1]+j-count]
+                        del y[i*inst_scores.shape[1]+j-count]
+                        del colors[i*inst_scores.shape[1]+j-count]
+
+                        # Increment the counting of already deleted items
+                        count += 1
+
+            # Colors to use in the prediction probability bar plots
+            pred_colors = cl.scales['8']['div']['RdYlGn']
+
+            # Create "percentage bar" plots through pairs of unfilled and filled rectangles
+            shapes_list = []
+
+            # Starting y coordinate of the first shape
+            y0 = -0.25
+
+            # Height of the shapes (y length)
+            step = 0.5
+
+            for i in range(len(patients)):
+                # Set the starting x coordinate to after the last data point
+                x0 = inst_scores.shape[1]
+
+                # Set the filling length of the shape
+                x1_fill = x0 + pred_prob[i]
+
+                shape_unfilled = {
+                                    'type': 'rect',
+                                    'x0': x0,
+                                    'y0': y0,
+                                    'x1': x0 + 1,
+                                    'y1': y0 + step,
+                                    'line': {
+                                                'color': 'rgba(0, 0, 0, 1)',
+                                                'width': 2,
+                                            },
+                                 }
+
+                shape_filled = {
+                                    'type': 'rect',
+                                    'x0': x0,
+                                    'y0': y0,
+                                    'x1': x1_fill,
+                                    'y1': y0 + step,
+                                    'fillcolor': pred_colors[int(len(pred_colors)-1-(max(pred_prob[i]*len(pred_colors)-1, 0)))]
+                                 }
+                shapes_list.append(shape_unfilled)
+                shapes_list.append(shape_filled)
+
+                # Set the starting y coordinate for the next shapes
+                y0 = y0 + 2 * step
+
+            plot_data = [{"x": seq_insts_x,
+                          "y": patients_y,
+                          "marker": dict(color=colors, size=12,
+                                         line = dict(
+                                                      color = 'black',
+                                                      width = 1
+                                                    ),
+                                         colorbar=dict(title='Normalized scores'),
+                                         colorscale=[[0, 'rgba(30,136,229,1)'], [0.5, 'white'], [1, 'rgba(255,13,87,1)']]),
+                          "mode": "markers",
+                          "type": "scatter",
+                          "hoverinfo": 'x+y'
+                         },
+                         go.Scatter(
+                                     x=text_x,
+                                     y=text_y,
+                                     text=text_content,
+                                     mode='text',
+                                     textfont=dict(color='#ffffff'),
+                                     hoverinfo='text'
+                         )]
+            layout = go.Layout(
+                                title="Patients list test",
+                                xaxis=dict(
+                                            title="Instance",
+                                            showgrid=False,
+                                            zeroline=False
+                                          ),
+                                yaxis=dict(
+                                            title="Patient ID",
+                                            showgrid=False,
+                                            zeroline=False
+                                          ),
+                                hovermode="closest",
+                                shapes=shapes_list,
+                                showlegend=False
+            )
+
         fig = go.Figure(plot_data, layout)
         py.iplot(fig)
 

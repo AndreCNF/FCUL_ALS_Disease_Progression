@@ -13,7 +13,8 @@ plotly = "^3.9"
 numpy = "^1.16"
 pandas = "^0.24.2"
 shap = {git = "https://github.com/AndreCNF/shap.git"}
-comet-ml = "^1.0"
+colorlover = "^0.3.0"
+comet_ml = "^1.0"
 
 [tool.poetry.dev-dependencies]
 
