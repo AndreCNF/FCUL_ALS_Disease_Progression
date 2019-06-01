@@ -285,7 +285,32 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 
 interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=False, SHAP_bkgnd_samples=200)
 
+ref_output, _ = utils.model_inference(interpreter.model, interpreter.seq_len_dict,
+                                      data=(test_features[:n_patients], test_labels[:n_patients]), metrics=[''],
+                                      seq_final_outputs=False,
+                                      cols_to_remove=[interpreter.id_column, interpreter.inst_column])
+
+ref_output.shape
+
+sum(x_lengths_test)
+
+x_lengths_arr = np.array(x_lengths_test)
+x_lengths_arr
+
+x_lengths_cum = np.cumsum(x_lengths_arr)
+x_lengths_cum
+
+start_idx = np.roll(x_lengths_cum, 1)
+start_idx[0] = 0
+start_idx
+
+end_idx = x_lengths_cum - 1
+end_idx
+
+[ref_output[start_idx[i]:end_idx[i]] for i in range(len(start_idx))]
+
 # + {"pixiedust": {"displayParams": {}}}
+# %%pixie_debugger
 # Number of patients to analyse
 n_patients = 20
 
@@ -408,13 +433,13 @@ py.iplot(fig)
 
 # +
 # Choosing which example to use
-patient = 8
+patient = 0
 
 # True sequence length of the current patient's data
-seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
+seq_len = seq_len_dict[test_features[patient, 0, 0].item()]
 
 # Plot the instance importance of one sequence
-interpreter.instance_importance_plot(test_features_denorm, interpreter.inst_scores, patient, seq_len)
+interpreter.instance_importance_plot(test_features, interpreter.inst_scores, patient, seq_len)
 # -
 
 ref_output = interpreter.model(test_features[patient, :, 2:].float().unsqueeze(0), [x_lengths_test[patient]])

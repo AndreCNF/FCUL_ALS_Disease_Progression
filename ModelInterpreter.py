@@ -184,7 +184,8 @@ class ModelInterpreter:
 
     # [TODO] Analyse other options for the calculation of instance importance scores
     # (e.g. scaling with logarithm or sigmoid, average with variation of output since the previous instance, etc)
-    def instance_importance(self, data=None, labels=None, x_lengths=None, see_progress=True):
+    def instance_importance(self, data=None, labels=None, x_lengths=None,
+                            see_progress=True, occlusion_wgt=0.5):
         '''Calculate the instance importance scores to interpret the impact of
         each instance of a sequence on the final output.
 
@@ -202,6 +203,16 @@ class ModelInterpreter:
         see_progress : bool, default True
             If set to True, a progress bar will show up indicating the execution
             of the instance importance scores calculations.
+        occlusion_wgt : float, default 0.75
+            Weight given to the occlusion part of the instance importance score.
+            This scores is calculated as a weighted average of the instance's
+            influence on the final output and the variation of the output
+            probability, between the current instance and the previous one. As
+            such, this weight should have a value between 0 and 1, with the
+            output variation receiving the remaining weight (1 - occlusion_wgt),
+            where 0 corresponds to not using the occlusion component at all, 0.5
+            is a normal, unweighted average and 1 deactivates the use of the
+            output variation part.
 
         Returns
         -------
@@ -209,6 +220,18 @@ class ModelInterpreter:
             Array containing the importance scores of each instance in the
             given input sequences.
         '''
+        # Confirm that the occlusion weight has a valid value (between 0 and 1)
+        if occlusion_wgt > 1 or occlusion_wgt < 0:
+            raise Exception(f'ERROR: Inserted invalid occlusion weight value {occlusion_wgt}. Please replace with a value between 0 and 1.')
+
+        if occlusion_wgt < 1:
+            # If the output variation is used in the calculation of the score,
+            # get the reference outputs for all the instances of the sequences
+            seq_final_outputs = False
+        else:
+            # Otherwise, only the final outputs of the sequences are retrieved
+            seq_final_outputs = True
+
         if data is None:
             # If a subset of data to interpret isn't specified, the interpreter will use all the data
             data = self.data
@@ -217,18 +240,21 @@ class ModelInterpreter:
         # Make sure that the data is in type float
         data = data.float()
 
-        # # Remove identifier columns from the data
-        # features_idx = list(range(data.shape[2]))
-        # features_idx.remove(self.id_column)
-        # features_idx.remove(self.inst_column)
-        # data_no_ids = data[:, :, features_idx]
-
         # Model output when using all the original instances in the input sequences
         ref_output, _ = utils.model_inference(self.model, self.seq_len_dict,
                                               data=(data, labels), metrics=[''],
-                                              seq_final_outputs=True)
+                                              seq_final_outputs=seq_final_outputs,
+                                              cols_to_remove=[self.id_column, self.inst_column])
 
-        def calc_instance_score(sequence_data, instance, ref_output, x_length):
+        if not seq_final_outputs:
+            # Organize the stacked outputs to become a list of outputs for each sequence
+            x_lengths_arr = np.array(x_lengths)
+            x_lengths_cum = np.cumsum(x_lengths_arr)
+            start_idx = np.roll(x_lengths_cum, 1)
+            end_idx = x_lengths_cum - 1
+            ref_output = [ref_output[start_idx[i]:end_idx[i]] for i in range(len(start_idx))]
+
+        def calc_instance_score(sequence_data, instance, ref_output, x_length, occlusion_wgt):
             # Remove identifier columns from the data
             features_idx = list(range(sequence_data.shape[1]))
             features_idx.remove(self.id_column)
@@ -250,26 +276,47 @@ class ModelInterpreter:
 
             # Only use the last output (i.e. the one from the last instance of the sequence)
             new_output = new_output[-1].item()
-            ref_output = ref_output.item()
+
+            # Flag that indicates whether the output variation component will be used in the instance importance score
+            # (in a weighted average)
+            use_outvar_score = len(ref_output.shape) > 1
+
+            if use_outvar_score:
+                # Get the output from the previous instance
+                prev_output = ref_output[instance-1].item()
+
+                # Get the last output
+                ref_output = ref_output[x_length-1].item()
+            else:
+                ref_output = ref_output.item()
 
             # The instance importance score is then the difference between the output probability with the instance
             # and the probability without the instance
             inst_score = ref_output - new_output
+
+            if instance > 0 and use_outvar_score:
+                # If it's not the first instance, add the output variation characteristic in a weighted average
+                inst_score = occlusion_wgt * inst_score + (1 - occlusion_wgt) * (ref_output[instance] - ref_output[instance-1])
+
+            # Apply a tanh function to make even the smaller scores (which are the most frequent) more salient
+            inst_score = np.tanh(1 * inst_score)
+
             return inst_score
 
         if see_progress:
-            inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num])
-                            for inst in range(x_lengths[seq_num])] for seq_num in self.progress_bar(range(data.shape[0]))]
+            # inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num], occlusion_wgt)
+            #                 for inst in range(x_lengths[seq_num])] for seq_num in self.progress_bar(range(data.shape[0]))]
             # DEBUG
-            # inst_scores = []
-            # for seq_num in self.progress_bar(range(data.shape[0])):
-            #     tmp_list = []
-            #     for inst in range(x_lengths[seq_num]):
-            #         tmp_list.append(calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num]))
-            #     inst_scores.append(tmp_list)
+            inst_scores = []
+            for seq_num in self.progress_bar(range(data.shape[0])):
+                tmp_list = []
+                for inst in range(x_lengths[seq_num]):
+                    tmp_list.append(calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num]))
+                inst_scores.append(tmp_list)
         else:
-            inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num])
+            inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num], occlusion_wgt)
                             for inst in range(x_lengths[seq_num])] for seq_num in range(data.shape[0])]
+
         # Pad the instance scores lists so that all have the same length
         inst_scores = [utils.pad_list(scores_list, data.shape[1], padding_value=self.padding_value) for scores_list in inst_scores]
 
@@ -554,7 +601,8 @@ class ModelInterpreter:
             # Calculate the prediction probabilities for the provided data
             pred_prob, _ = utils.model_inference(self.model, self.seq_len_dict,
                                                  data=(orig_data, labels),
-                                                 metrics=[''], seq_final_outputs=True)
+                                                 metrics=[''], seq_final_outputs=True,
+                                                 cols_to_remove=[self.id_column, self.inst_column])
 
         # Convert the prediction probability data into a NumPy array
         if type(pred_prob) is torch.Tensor:

@@ -21,3 +21,5 @@ Matplotlib_venv/
 .vscode/settings.json
 *.pickle
 .ipynb_checkpoints/visualisation_experiments-checkpoint.ipynb
+.ipynb_checkpoints/random_experiments-checkpoint.ipynb
+.ipynb_checkpoints/visualization_experiments-checkpoint.ipynb

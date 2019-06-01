@@ -791,7 +791,7 @@ def configure_plotly_browser_state():
 
 def model_inference(model, seq_len_dict, dataloader=None, data=None, metrics=['loss', 'accuracy', 'AUC'],
                     padding_value=999999, output_rounded=False, experiment=None, set_name='test',
-                    seq_final_outputs=False):
+                    seq_final_outputs=False, cols_to_remove=[0, 1]):
     '''Do inference on specified data using a given model.
 
     Parameters
@@ -829,6 +829,10 @@ def model_inference(model, seq_len_dict, dataloader=None, data=None, metrics=['l
     seq_final_outputs : bool, default False
         If set to true, the function only returns the ouputs given at each
         sequence's end.
+    cols_to_remove : list of ints, default [0, 1]
+        List of indeces of columns to remove from the features before feeding to
+        the model. This tend to be the identifier columns, such as subject_id
+        and ts (timestamp).
 
     Returns
     -------
@@ -868,9 +872,12 @@ def model_inference(model, seq_len_dict, dataloader=None, data=None, metrics=['l
     if dataloader is None and data is not None:
         features, labels = data[0].float(), data[1].float()             # Make the data have type float instead of double, as it would cause problems
         features, labels, x_lengths = sort_by_seq_len(features, seq_len_dict, labels) # Sort the data by sequence length
-        # [TODO] Replace the hardcoded "2:" bellow with code flexible to different column indeces (like I did in the model interpreter instance importance method)
-        scores = model.forward(features[:, :, 2:], x_lengths)           # Feedforward the data through the model
-                                                                        # (the 2 is there to avoid using the identifier features in the predictions)
+
+        # Remove unwanted columns from the data
+        features_idx = list(range(features.shape[2]))
+        [features_idx.remove(column) for column in cols_to_remove]
+        features = features[:, :, features_idx]
+        scores = model.forward(features, x_lengths)                     # Feedforward the data through the model
 
         # Adjust the labels so that it gets the exact same shape as the predictions
         # (i.e. sequence length = max sequence length of the current batch, not the max of all the data)
@@ -937,8 +944,12 @@ def model_inference(model, seq_len_dict, dataloader=None, data=None, metrics=['l
         with torch.no_grad():
             features, labels = features.float(), labels.float()             # Make the data have type float instead of double, as it would cause problems
             features, labels, x_lengths = sort_by_seq_len(features, seq_len_dict, labels) # Sort the data by sequence length
-            scores = model.forward(features[:, :, 2:], x_lengths)        # Feedforward the data through the model
-                                                                            # (the 2 is there to avoid using the identifier features in the predictions)
+
+            # Remove unwanted columns from the data
+            features_idx = list(range(features.shape[2]))
+            [features_idx.remove(column) for column in cols_to_remove]
+            features = features[:, :, features_idx]
+            scores = model.forward(features, x_lengths)                     # Feedforward the data through the model
 
             # Adjust the labels so that it gets the exact same shape as the predictions
             # (i.e. sequence length = max sequence length of the current batch, not the max of all the data)
