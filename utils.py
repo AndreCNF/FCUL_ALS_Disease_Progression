@@ -685,20 +685,29 @@ def sort_by_seq_len(data, seq_len_dict, labels=None, id_column=0):
     # Get the original lengths of the sequences, for the input data
     x_lengths = [seq_len_dict[id] for id in list(data[:, 0, id_column].numpy())]
 
-    # Sorted indeces to get the data sorted by sequence length
-    data_sorted_idx = list(np.argsort(x_lengths)[::-1])
+    is_sorted = all(x_lengths[i] >= x_lengths[i+1] for i in range(len(x_lengths)-1))
 
-    # Sort the x_lengths array by descending sequence length
-    x_lengths = [x_lengths[idx] for idx in data_sorted_idx]
+    if is_sorted:
+        # Do nothing if it's already sorted
+        sorted_data = data
+        sorted_labels = labels
+    else:
+        # Sorted indeces to get the data sorted by sequence length
+        data_sorted_idx = list(np.argsort(x_lengths)[::-1])
 
-    # Sort the data by descending sequence length
-    sorted_data = data[data_sorted_idx, :, :]
+        # Sort the x_lengths array by descending sequence length
+        x_lengths = [x_lengths[idx] for idx in data_sorted_idx]
+
+        # Sort the data by descending sequence length
+        sorted_data = data[data_sorted_idx, :, :]
+
+        if labels is not None:
+            # Sort the labels by descending sequence length
+            sorted_labels = labels[data_sorted_idx, :]
 
     if labels is None:
         return sorted_data, x_lengths
     else:
-        # Sort the labels by descending sequence length
-        sorted_labels = labels[data_sorted_idx, :]
         return sorted_data, sorted_labels,  x_lengths
 
 
@@ -830,6 +839,9 @@ def model_inference(model, seq_len_dict, dataloader=None, data=None, metrics=['l
         Dictionary containing the calculated performance on each of the
         specified metrics.
     '''
+    # Guarantee that the model is in evaluation mode, so as to deactivate dropout
+    model.eval()
+
     # Create an empty dictionary with all the possible metrics
     metrics_vals = {'loss': None,
                     'accuracy': None,

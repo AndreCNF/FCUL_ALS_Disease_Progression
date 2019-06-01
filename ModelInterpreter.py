@@ -83,6 +83,9 @@ class ModelInterpreter:
         self.feat_names = feat_names
         self.padding_value = padding_value
 
+        # Put the model in evaluation mode to deactivate dropout
+        self.model.eval()
+
         if type(data) is torch.Tensor:
             self.data = data
             self.labels = labels
@@ -179,6 +182,8 @@ class ModelInterpreter:
         seq_len_dict = dict([(idx, val[0]) for idx, val in list(zip(seq_len_df.index, seq_len_df.values))])
         return seq_len_dict
 
+    # [TODO] Analyse other options for the calculation of instance importance scores
+    # (e.g. scaling with logarithm or sigmoid, average with variation of output since the previous instance, etc)
     def instance_importance(self, data=None, labels=None, x_lengths=None, see_progress=True):
         '''Calculate the instance importance scores to interpret the impact of
         each instance of a sequence on the final output.
@@ -258,8 +263,10 @@ class ModelInterpreter:
             # DEBUG
             # inst_scores = []
             # for seq_num in self.progress_bar(range(data.shape[0])):
+            #     tmp_list = []
             #     for inst in range(x_lengths[seq_num]):
-            #         inst_scores.append(calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num]))
+            #         tmp_list.append(calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num]))
+            #     inst_scores.append(tmp_list)
         else:
             inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num])
                             for inst in range(x_lengths[seq_num])] for seq_num in range(data.shape[0])]
@@ -576,7 +583,7 @@ class ModelInterpreter:
                                                                   neg_color=NEG_COLOR))
                           )]
             layout = go.Layout(
-                                title=f'Instance importance scores for ID {int(orig_data[0, 0, self.id_column])}',
+                                title=f'Instance importance scores for ID {int(orig_data[id, 0, self.id_column])}',
                                 xaxis=dict(title='Instance'),
                                 yaxis=dict(title='Importance scores')
                               )
@@ -591,8 +598,8 @@ class ModelInterpreter:
             pred_prob = pred_prob[id]
 
             # Unique patient ids in string format
-            patients = [str(int(item)) for item in set([tensor.item()
-                        for tensor in list(orig_data[:, 0, self.id_column])])]
+            patients = [str(int(item)) for item in [tensor.item()
+                        for tensor in list(orig_data[:, 0, self.id_column])]]
 
             # Sequence instances count, used as X in the plot
             seq_insts_x = [list(range(inst_scores.shape[1]))
@@ -606,7 +613,7 @@ class ModelInterpreter:
             patients_y = list(np.array(patients_y).flatten())
 
             # Define colors for the data points based on their normalized scores (from 0 to 1 instead of -1 to 1)
-            colors = [(val+1)/2 for val in inst_scores.flatten()]
+            colors = [val for val in inst_scores.flatten()]
 
             # Count the number of already deleted paddings
             count = 0
@@ -682,6 +689,7 @@ class ModelInterpreter:
             # Prediction probabilities in text form, to appear in the plot
             text_content = [pred_prob[idx] for idx in range(len(pred_prob)) for i in range(10)]
 
+            # [TODO] Ajdust the zoom so that the plot always has the same scale
             plot_data = [{"x": seq_insts_x,
                           "y": patients_y,
                           "marker": dict(color=colors, size=12,
@@ -689,8 +697,10 @@ class ModelInterpreter:
                                                       color = 'black',
                                                       width = 1
                                                     ),
-                                         colorbar=dict(title='Normalized scores'),
-                                         colorscale=[[0, 'rgba(30,136,229,1)'], [0.5, 'white'], [1, 'rgba(255,13,87,1)']]),
+                                         colorbar=dict(title='Scores'),
+                                         colorscale=[[0, 'rgba(30,136,229,1)'], [0.5, 'white'], [1, 'rgba(255,13,87,1)']],
+                                         cmax=1,
+                                         cmin=-1),
                           "mode": "markers",
                           "type": "scatter",
                           "hoverinfo": 'x+y'
@@ -701,7 +711,7 @@ class ModelInterpreter:
                                      text=text_content,
                                      mode='text',
                                      textfont=dict(size = 1, color='#ffffff'),
-                                     hoverinfo='text'
+                                     hoverinfo='y+text'
                          )]
             layout = go.Layout(
                                 title="Patients time series",

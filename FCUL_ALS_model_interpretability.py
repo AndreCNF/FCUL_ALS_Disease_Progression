@@ -286,7 +286,10 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=False, SHAP_bkgnd_samples=200)
 
 # + {"pixiedust": {"displayParams": {}}}
-interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:10, :, :], test_labels=test_labels[:10, :], instance_importance=True, feature_importance=False)
+# Number of patients to analyse
+n_patients = 20
+
+interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=True, feature_importance=False)
 
 # +
 # Get the current day and time to attach to the saved model's name
@@ -308,18 +311,19 @@ with open(interpreter_filename, 'wb') as file:
 with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_14_05_2019_02_12.pickle', 'rb') as file:
     interpreter_loaded = pickle.load(file)
 
-np.array_equal(interpreter_loaded.feat_scores, interpreter.feat_scores)
+if np.array_equal(interpreter_loaded.feat_scores, interpreter.feat_scores):
+    interpreter = interpreter_loaded
 
 # ### Feature importance plots
 
 # Summarize the effects of all the features
-shap.summary_plot(interpreter_loaded.feat_scores.reshape(-1, interpreter_loaded.model.lstm.input_size), 
-                  features=test_features_denorm[:, :, 2:].view(-1, interpreter_loaded.model.lstm.input_size).numpy(), 
+shap.summary_plot(interpreter.feat_scores.reshape(-1, interpreter.model.lstm.input_size), 
+                  features=test_features_denorm[:, :, 2:].view(-1, interpreter.model.lstm.input_size).numpy(), 
                   feature_names=ALS_cols, plot_type='bar')
 
 # Summarize the effects of all the features
-shap.summary_plot(interpreter_loaded.feat_scores.reshape(-1, model.lstm.input_size), 
-                  features=test_features_denorm[:, :, 2:].contiguous().view(-1, interpreter_loaded.model.lstm.input_size).numpy(), 
+shap.summary_plot(interpreter.feat_scores.reshape(-1, model.lstm.input_size), 
+                  features=test_features_denorm[:, :, 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy(), 
                   feature_names=ALS_cols, plot_type='violin')
 
 # +
@@ -338,7 +342,7 @@ seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
 #                 features=test_features_denorm[patient, :seq_len, 2:].numpy(), 
 #                 feature_names=ALS_cols)
 shap.force_plot(0.2, 
-                interpreter_loaded.feat_scores[patient, :seq_len], 
+                interpreter.feat_scores[patient, :seq_len], 
                 features=test_features_denorm[patient, :seq_len, 2:].numpy(), 
                 feature_names=ALS_cols)
 # + {}
@@ -355,19 +359,17 @@ ts = 1
 #                 features=test_features_denorm[patient, ts, 2:].numpy(), 
 #                 feature_names=ALS_cols)
 shap.force_plot(0.2, 
-                interpreter_loaded.feat_scores[patient][ts], 
+                interpreter.feat_scores[patient][ts], 
                 features=test_features_denorm[patient, ts, 2:].numpy(), 
                 feature_names=ALS_cols)
 # -
 # ### Instance importance plots
 
-interpreter_loaded = interpreter
-
 # interpreter_loaded.inst_scores[interpreter_loaded.inst_scores == interpreter_loaded.padding_value]
-interpreter_loaded.inst_scores[interpreter_loaded.inst_scores == 999999] = np.nan
-interpreter_loaded.inst_scores
+interpreter.inst_scores[interpreter.inst_scores == 999999] = np.nan
+interpreter.inst_scores
 
-inst_scores_avg = np.nanmean(interpreter_loaded.inst_scores, axis=0)
+inst_scores_avg = np.nanmean(interpreter.inst_scores, axis=0)
 
 list(range(1, len(inst_scores_avg)+1))
 
@@ -391,8 +393,6 @@ patient = 0
 seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
 
 # Plot the instance importance of one sequence
-configure_plotly_browser_state()
-
 data = [go.Scatter(
                     x = list(range(seq_len)),
                     y = interpreter_loaded.inst_scores[patient, :seq_len],
@@ -408,7 +408,7 @@ py.iplot(fig)
 
 # +
 # Choosing which example to use
-patient = 0
+patient = 8
 
 # True sequence length of the current patient's data
 seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
@@ -417,19 +417,22 @@ seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
 interpreter.instance_importance_plot(test_features_denorm, interpreter.inst_scores, patient, seq_len)
 # -
 
-# **Comments:**
-# * The downward spike at instances 5, 6 and 7 coincide with the instances where higher positive SHAP values appear (e.g. 3r = 2, p10 = 1), as seen on the SHAP plot of the same patient's sequence.
-# * It doesn't make sense that all instances in a sequence have so big absolute importance scores. That would mean that all instances are somehow super important, yet at the same time just removing any single one of them would change the output completely.
-
-ref_output = interpreter_loaded.model(test_features[0, :, 2:].float().unsqueeze(0), [x_lengths_test[0]])
+ref_output = interpreter.model(test_features[patient, :, 2:].float().unsqueeze(0), [x_lengths_test[patient]])
 ref_output
+
+len(ref_output)
+
+x_lengths_test[patient]
 
 ref_output[-1].item()
 
+ref_output2, _ = utils.model_inference(interpreter.model, interpreter.seq_len_dict, data=(test_features[patient].unsqueeze(0), test_labels[patient].unsqueeze(0)),
+                                       metrics=[''], seq_final_outputs=True)
+ref_output2.item()
+
 # +
-patient = 0
 instance = 0
-sequence_data = test_features[0, :, 2:].float()
+sequence_data = test_features[patient, :, 2:].float()
 x_length = x_lengths_test[patient]
 
 # Indeces without the instance that is being analyzed
@@ -443,55 +446,36 @@ sequence_data = sequence_data[instances_idx, :]
 sequence_data = sequence_data.unsqueeze(0)
 
 # Calculate the output without the instance that is being analyzed
-new_output = interpreter_loaded.model(sequence_data, [x_length-1])
+new_output = interpreter.model(sequence_data, [x_length-1])
 new_output[-1].item()
 # -
+
+test_features[patient, :, 2:].shape
+
+sequence_data.shape
 
 ref_output[-1].item() - new_output[-1].item()
 
 # **Comments:**
 # * The fact that the result of the last cell (-6.099371239542961e-05) is so different from the instance importance score assigned to the instance (-0.974) proves that something is clearly wrong in the instance_importance method.
 
-test_features[:5, :, 2:]
-
-test_features[:5, :, 2:].shape
-
-x_lengths_test[:5]
-
-# + {"pixiedust": {"displayParams": {}}}
-output = interpreter_loaded.model(test_features[:5, :, 2:].float(), x_lengths_test[:5])
-output[:20]
-# -
-
-output[19]
-
-sum(x_lengths_test[:5])
-
-5*20
-
 x_lengths_test_cumsum = np.cumsum(x_lengths_test[:5])
 x_lengths_test_cumsum
 
-x_lengths_test_cumsum_shifted = np.roll(x_lengths_test_cumsum, 1)
-x_lengths_test_cumsum_shifted[0] = 0
-x_lengths_test_cumsum_shifted
-
 output[x_lengths_test_cumsum-1]
 
-pred_prob, _ = utils.model_inference(interpreter.model, interpreter.seq_len_dict, data=(test_features[:10], test_labels[:10]),
+pred_prob, _ = utils.model_inference(interpreter.model, interpreter.seq_len_dict, data=(test_features[:n_patients], test_labels[:n_patients]),
                                      metrics=[''], seq_final_outputs=True)
 pred_prob
 
 pred_prob.shape
 
-test_features[:10].shape
+test_features[:n_patients].shape
 
 interpreter.inst_scores.shape
 
-interpreter.instance_importance_plot(test_features[:10], interpreter.inst_scores, pred_prob=pred_prob)
+test_features[:n_patients, 0, 0]
 
-len(interpreter.inst_scores.shape)
-
-type(None) is list
+interpreter.instance_importance_plot(test_features[:n_patients], interpreter.inst_scores, pred_prob=pred_prob)
 
 
