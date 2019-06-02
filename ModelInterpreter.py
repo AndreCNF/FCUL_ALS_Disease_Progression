@@ -369,7 +369,7 @@ class ModelInterpreter:
             print(f'Attention: you have chosen to interpret the model using SHAP, with {self.SHAP_bkgnd_samples} background samples applied to {test_data.shape[0]} test samples. This might take a while. Depending on your computer\'s processing power, you should do a coffee break or even go to sleep!')
 
             # Sort the background data by sequence length
-            bkgnd_data, x_lengths_bkgnd = utils.sort_by_seq_len(bkgnd_data)
+            bkgnd_data, x_lengths_bkgnd = utils.sort_by_seq_len(bkgnd_data, self.seq_len_dict)
 
             # Remove identifier columns from the data
             features_idx = list(range(test_data.shape[2]))
@@ -741,7 +741,9 @@ class ModelInterpreter:
             # Prediction probabilities in text form, to appear in the plot
             text_content = [pred_prob[idx] for idx in range(len(pred_prob)) for i in range(10)]
 
-            # [TODO] Ajdust the zoom so that the plot always has the same scale
+            # [TODO] Ajdust the zoom so that the initial plot doens't block part of the first and last sequences that show up
+
+            # Create plotly chart
             plot_data = [{"x": seq_insts_x,
                           "y": patients_y,
                           "marker": dict(color=colors, size=12,
@@ -783,6 +785,11 @@ class ModelInterpreter:
                                 showlegend=False
             )
 
+            if len(patients) > 10:
+                # Prevent cramming too many sequences into the plot
+                layout.yaxis.range = [patients[-10], patients[-1]]
+
+        # Show the plot
         fig = go.Figure(plot_data, layout)
         py.iplot(fig)
 

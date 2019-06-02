@@ -292,11 +292,10 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=False, SHAP_bkgnd_samples=200)
 
 # + {"pixiedust": {"displayParams": {}}}
-# # %%pixie_debugger
 # Number of patients to analyse
 n_patients = 50
 
-interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=True, feature_importance=False)
+_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=True, feature_importance=False)
 
 # +
 # Get the current day and time to attach to the saved model's name
