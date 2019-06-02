@@ -185,7 +185,7 @@ class ModelInterpreter:
     # [TODO] Analyse other options for the calculation of instance importance scores
     # (e.g. scaling with logarithm or sigmoid, average with variation of output since the previous instance, etc)
     def instance_importance(self, data=None, labels=None, x_lengths=None,
-                            see_progress=True, occlusion_wgt=0.5):
+                            see_progress=True, occlusion_wgt=0.70):
         '''Calculate the instance importance scores to interpret the impact of
         each instance of a sequence on the final output.
 
@@ -251,7 +251,8 @@ class ModelInterpreter:
             x_lengths_arr = np.array(x_lengths)
             x_lengths_cum = np.cumsum(x_lengths_arr)
             start_idx = np.roll(x_lengths_cum, 1)
-            end_idx = x_lengths_cum - 1
+            start_idx[0] = 0
+            end_idx = x_lengths_cum
             ref_output = [ref_output[start_idx[i]:end_idx[i]] for i in range(len(start_idx))]
 
         def calc_instance_score(sequence_data, instance, ref_output, x_length, occlusion_wgt):
@@ -279,11 +280,14 @@ class ModelInterpreter:
 
             # Flag that indicates whether the output variation component will be used in the instance importance score
             # (in a weighted average)
-            use_outvar_score = len(ref_output.shape) > 1
+            use_outvar_score = ref_output.shape[0] > 1
 
             if use_outvar_score:
                 # Get the output from the previous instance
                 prev_output = ref_output[instance-1].item()
+
+                # Get the output from the current instance
+                curr_output = ref_output[instance].item()
 
                 # Get the last output
                 ref_output = ref_output[x_length-1].item()
@@ -296,10 +300,10 @@ class ModelInterpreter:
 
             if instance > 0 and use_outvar_score:
                 # If it's not the first instance, add the output variation characteristic in a weighted average
-                inst_score = occlusion_wgt * inst_score + (1 - occlusion_wgt) * (ref_output[instance] - ref_output[instance-1])
+                inst_score = occlusion_wgt * inst_score + (1 - occlusion_wgt) * (curr_output - prev_output)
 
             # Apply a tanh function to make even the smaller scores (which are the most frequent) more salient
-            inst_score = np.tanh(1 * inst_score)
+            inst_score = np.tanh(4 * inst_score)
 
             return inst_score
 
@@ -311,7 +315,7 @@ class ModelInterpreter:
             for seq_num in self.progress_bar(range(data.shape[0])):
                 tmp_list = []
                 for inst in range(x_lengths[seq_num]):
-                    tmp_list.append(calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num]))
+                    tmp_list.append(calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num], occlusion_wgt))
                 inst_scores.append(tmp_list)
         else:
             inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num], occlusion_wgt)

@@ -469,6 +469,9 @@ def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_me
     data : pandas.DataFrame or torch.Tensor
         Denormalized Pandas dataframe or PyTorch tensor.
     '''
+    # Variable that will store the denormalized data
+    denorm_data = data.clone().detach()
+
     # Check if specific columns have been specified for denormalization
     if columns_to_denormalize is None:
         # Denormalize all non identifier continuous columns, ignore one hot encoded ones
@@ -486,7 +489,7 @@ def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_me
         if type(data) is pd.DataFrame:
             # Denormalize the right columns
             for col in columns_to_denormalize:
-                data[col] = data[col] * column_stds[col] + column_means[col]
+                denorm_data[col] = data[col] * column_stds[col] + column_means[col]
 
         # Otherwise, the tensor is denormalized
         else:
@@ -501,7 +504,7 @@ def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_me
 
             # Denormalize the right columns
             for col in tensor_columns_to_denormalize:
-                data[:, :, col] = data[:, :, col] * column_stds[idx_to_name[col]] + column_means[idx_to_name[col]]
+                denorm_data[:, :, col] = data[:, :, col] * column_stds[idx_to_name[col]] + column_means[idx_to_name[col]]
 
     elif normalization_method.lower() == 'min-max':
         column_mins = dict(df[columns_to_denormalize].min())
@@ -511,7 +514,7 @@ def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_me
         if type(data) is pd.DataFrame:
             # Denormalize the right columns
             for col in columns_to_denormalize:
-                data[col] = data[col] * (column_maxs[col] - column_mins[col]) + column_mins[col]
+                denorm_data[col] = data[col] * (column_maxs[col] - column_mins[col]) + column_mins[col]
 
         # Otherwise, the tensor is denormalized
         else:
@@ -526,14 +529,14 @@ def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_me
 
             # Denormalize the right columns
             for col in tensor_columns_to_normalize:
-                data[:, :, col] = data[:, :, col] * (column_maxs[idx_to_name[col]] - column_mins[idx_to_name[col]]) \
-                                  + column_mins[idx_to_name[col]]
+                denorm_data[:, :, col] = data[:, :, col] * (column_maxs[idx_to_name[col]] - column_mins[idx_to_name[col]]) \
+                                         + column_mins[idx_to_name[col]]
 
     else:
         raise ValueError(f'{normalization_method} isn\'t a valid normalization method. Available options \
                          are \'z-score\' and \'min-max\'.')
 
-    return data
+    return denorm_data
 
 
 def missing_values_imputation(tensor):

@@ -201,6 +201,15 @@ list(np.diff(unpadded_labels.int().numpy()))
 train_features, train_labels, x_lengths_train = utils.sort_by_seq_len(train_features, seq_len_dict, labels=train_labels)
 test_features, test_labels, x_lengths_test = utils.sort_by_seq_len(test_features, seq_len_dict, labels=test_labels)
 
+test_features[0, 0]
+
+# Denormalize the feature values so that the plots are easier to understand
+test_features_denorm = utils.denormalize_data(orig_ALS_df, test_features)
+
+test_features[0, 0]
+
+test_features_denorm[0, 0]
+
 # + {"pixiedust": {"displayParams": {}}}
 # Use the first n_bkgnd_samples training examples as our background dataset to integrate over
 # (Ignoring the first 2 features, as they constitute the identifiers 'subject_id' and 'ts')
@@ -230,9 +239,6 @@ ts = 1
 # Plot the explanation of one prediction
 shap.force_plot(explainer.expected_value[0], shap_values[patient][ts], features=test_features[patient, ts, 2:].numpy(), feature_names=ALS_cols)
 # -
-
-# Denormalize the feature values so that the plots are easier to understand
-test_features_denorm = utils.denormalize_data(orig_ALS_df, test_features)
 
 test_features_denorm.shape
 
@@ -285,34 +291,10 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 
 interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=False, SHAP_bkgnd_samples=200)
 
-ref_output, _ = utils.model_inference(interpreter.model, interpreter.seq_len_dict,
-                                      data=(test_features[:n_patients], test_labels[:n_patients]), metrics=[''],
-                                      seq_final_outputs=False,
-                                      cols_to_remove=[interpreter.id_column, interpreter.inst_column])
-
-ref_output.shape
-
-sum(x_lengths_test)
-
-x_lengths_arr = np.array(x_lengths_test)
-x_lengths_arr
-
-x_lengths_cum = np.cumsum(x_lengths_arr)
-x_lengths_cum
-
-start_idx = np.roll(x_lengths_cum, 1)
-start_idx[0] = 0
-start_idx
-
-end_idx = x_lengths_cum - 1
-end_idx
-
-[ref_output[start_idx[i]:end_idx[i]] for i in range(len(start_idx))]
-
 # + {"pixiedust": {"displayParams": {}}}
-# %%pixie_debugger
+# # %%pixie_debugger
 # Number of patients to analyse
-n_patients = 20
+n_patients = 50
 
 interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=True, feature_importance=False)
 
@@ -488,6 +470,8 @@ x_lengths_test_cumsum = np.cumsum(x_lengths_test[:5])
 x_lengths_test_cumsum
 
 output[x_lengths_test_cumsum-1]
+
+n_patients
 
 pred_prob, _ = utils.model_inference(interpreter.model, interpreter.seq_len_dict, data=(test_features[:n_patients], test_labels[:n_patients]),
                                      metrics=[''], seq_final_outputs=True)
