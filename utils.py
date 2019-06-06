@@ -1,4 +1,4 @@
-from comet_ml import Experiment                         # Comet.ml can log training metrics, parameters and do version control
+from comet_ml import Experiment                         # Comet.ml can log training metrics, parameters, do version control and parameter optimization
 import torch                                            # PyTorch to create and apply deep learning models
 from torch import nn, optim                             # nn for neural network layers and optim for training optimizers
 from torch.utils.data.sampler import SubsetRandomSampler
@@ -11,6 +11,7 @@ from tqdm import tqdm_notebook                          # tqdm allows to track c
 import numbers                                          # numbers allows to check if data is numeric
 from NeuralNetwork import NeuralNetwork                 # Import the neural network model class
 from sklearn.metrics import roc_auc_score               # ROC AUC model performance metric
+import warnings                                         # Print warnings for bad practices
 
 # Random seed used in PyTorch and NumPy's random operations (such as weight initialization)
 random_seed = 0
@@ -1042,9 +1043,12 @@ def model_inference(model, seq_len_dict, dataloader=None, data=None, metrics=['l
     return output, metrics_vals
 
 
-def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict, batch_size=32, n_epochs=50, lr=0.001,
-          model_path='models/', padding_value=999999, do_test=True, log_comet_ml=False, comet_ml_api_key=None,
-          comet_ml_project_name=None, comet_ml_workspace=None, comet_ml_save_model=False, features_list=None):
+def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict,
+          batch_size=32, n_epochs=50, lr=0.001, model_path='models/',
+          padding_value=999999, do_test=True, log_comet_ml=False,
+          comet_ml_api_key=None, comet_ml_project_name=None,
+          comet_ml_workspace=None, comet_ml_save_model=False, experiment=None,
+          features_list=None, get_val_loss_min=False, optim_score=None):
     '''Trains a given model on the provided data.
 
     Parameters
@@ -1096,19 +1100,37 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
     comet_ml_save_model : bool, default False
         If set to true, uploads the model with the lowest validation loss
         to comet.ml when logging data to the platform.
+    experiment : comet_ml.Experiment, default None
+        Defines an already existing Comet.ml experiment object to be used in the
+        training. If not defined (None), a new experiment is created inside the
+        method. In any case, a Comet.ml experiment is only used if log_comet_ml
+        is set to True and the remaining necessary Comet.ml related parameters
+        (comet_ml_api_key, comet_ml_project_name, comet_ml_workspace) are
+        properly set up.
     features_list : list of strings, default None
         Names of the features being used in the current pipeline. This
         will be logged to comet.ml, if activated, in order to have a
         more detailed version control.
+    get_val_loss_min : bool, default False
+        If set to True, besides returning the trained model, the method also
+        returns the minimum validation loss found during training.
+    optim_score : float, default None
+        If specified, it indicates which is the current minimum score which is
+        used as a criteria to choose the best model. It's useful for parameter
+        optimizations so that the optimizer learns which are the best parameters.
 
     Returns
     -------
     model : nn.Module
         The same input model but with optimized weight values.
+    val_loss_min : float
+        If get_val_loss_min is set to True, the method also returns the minimum
+        validation loss found during training.
     '''
     if log_comet_ml:
-        # Create a Comet.ml experiment
-        experiment = Experiment(api_key=comet_ml_api_key, project_name=comet_ml_project_name, workspace=comet_ml_workspace)
+        if experiment is None:
+            # Create a new Comet.ml experiment
+            experiment = Experiment(api_key=comet_ml_api_key, project_name=comet_ml_project_name, workspace=comet_ml_workspace)
         experiment.log_other("completed", False)
         experiment.log_other("random_seed", random_seed)
 
@@ -1117,7 +1139,8 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                         "n_epochs": n_epochs,
                         "n_hidden": model.n_hidden,
                         "n_layers": model.n_layers,
-                        "learning_rate": lr}
+                        "learning_rate": lr,
+                        "p_dropout": model.p_dropout}
         experiment.log_parameters(hyper_params)
 
         if features_list is not None:
@@ -1127,8 +1150,12 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
     optimizer = optim.Adam(model.parameters(), lr=lr)                       # Adam optimization algorithm
     step = 0                                                                # Number of iteration steps done so far
     print_every = 10                                                        # Steps interval where the metrics are printed
-    val_loss_min = np.inf                                                   # Minimum validation loss
     train_on_gpu = torch.cuda.is_available()                                # Check if GPU is available
+
+    if optim_score is not None:
+        val_loss_min = optim_score                                          # Use the parameter optimizer's current best score
+    else:
+        val_loss_min = np.inf                                               # Start with an infinitely big minimum validation loss
 
     for epoch in range(1, n_epochs+1):
         # Initialize the training metrics
@@ -1136,134 +1163,141 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
         train_acc = 0
         train_auc = 0
 
-        # Loop through the training data
-        for features, labels in train_dataloader:
-            model.train()                                                   # Activate dropout to train the model
-            optimizer.zero_grad()                                           # Clear the gradients of all optimized variables
+        try:
+            # Loop through the training data
+            for features, labels in train_dataloader:
+                model.train()                                                   # Activate dropout to train the model
+                optimizer.zero_grad()                                           # Clear the gradients of all optimized variables
 
-            if train_on_gpu:
-                features, labels = features.cuda(), labels.cuda()           # Move data to GPU
+                if train_on_gpu:
+                    features, labels = features.cuda(), labels.cuda()           # Move data to GPU
 
-            features, labels = features.float(), labels.float()             # Make the data have type float instead of double, as it would cause problems
-            features, labels, x_lengths = sort_by_seq_len(features, seq_len_dict, labels) # Sort the data by sequence length
-            scores = model.forward(features[:, :, 2:], x_lengths)           # Feedforward the data through the model
-                                                                            # (the 2 is there to avoid using the identifier features in the predictions)
+                features, labels = features.float(), labels.float()             # Make the data have type float instead of double, as it would cause problems
+                features, labels, x_lengths = sort_by_seq_len(features, seq_len_dict, labels) # Sort the data by sequence length
+                scores = model.forward(features[:, :, 2:], x_lengths)           # Feedforward the data through the model
+                                                                                # (the 2 is there to avoid using the identifier features in the predictions)
 
-            # Adjust the labels so that it gets the exact same shape as the predictions
-            # (i.e. sequence length = max sequence length of the current batch, not the max of all the data)
-            labels = torch.nn.utils.rnn.pack_padded_sequence(labels, x_lengths, batch_first=True)
-            labels, _ = torch.nn.utils.rnn.pad_packed_sequence(labels, batch_first=True, padding_value=padding_value)
+                # Adjust the labels so that it gets the exact same shape as the predictions
+                # (i.e. sequence length = max sequence length of the current batch, not the max of all the data)
+                labels = torch.nn.utils.rnn.pack_padded_sequence(labels, x_lengths, batch_first=True)
+                labels, _ = torch.nn.utils.rnn.pad_packed_sequence(labels, batch_first=True, padding_value=padding_value)
 
-            loss = model.loss(scores, labels, x_lengths)                    # Calculate the cross entropy loss
-            loss.backward()                                                 # Backpropagate the loss
-            optimizer.step()                                                # Update the model's weights
-            train_loss += loss                                              # Add the training loss of the current batch
-            mask = (labels <= 1).view_as(scores).float()                    # Create a mask by filtering out all labels that are not a padding value
-            unpadded_labels = torch.masked_select(labels.contiguous().view_as(scores), mask.byte()) # Completely remove the padded values from the labels using the mask
-            unpadded_scores = torch.masked_select(scores, mask.byte())      # Completely remove the padded values from the scores using the mask
-            pred = torch.round(unpadded_scores)                             # Get the predictions
-            correct_pred = pred == unpadded_labels                          # Get the correct predictions
-            train_acc += torch.mean(correct_pred.type(torch.FloatTensor))   # Add the training accuracy of the current batch, ignoring all padding values
-            train_auc += roc_auc_score(unpadded_labels.numpy(), unpadded_scores.detach().numpy()) # Add the training ROC AUC of the current batch
-            step += 1                                                       # Count one more iteration step
-            model.eval()                                                    # Deactivate dropout to test the model
+                loss = model.loss(scores, labels, x_lengths)                    # Calculate the cross entropy loss
+                loss.backward()                                                 # Backpropagate the loss
+                optimizer.step()                                                # Update the model's weights
+                train_loss += loss                                              # Add the training loss of the current batch
+                mask = (labels <= 1).view_as(scores).float()                    # Create a mask by filtering out all labels that are not a padding value
+                unpadded_labels = torch.masked_select(labels.contiguous().view_as(scores), mask.byte()) # Completely remove the padded values from the labels using the mask
+                unpadded_scores = torch.masked_select(scores, mask.byte())      # Completely remove the padded values from the scores using the mask
+                pred = torch.round(unpadded_scores)                             # Get the predictions
+                correct_pred = pred == unpadded_labels                          # Get the correct predictions
+                train_acc += torch.mean(correct_pred.type(torch.FloatTensor))   # Add the training accuracy of the current batch, ignoring all padding values
+                train_auc += roc_auc_score(unpadded_labels.numpy(), unpadded_scores.detach().numpy()) # Add the training ROC AUC of the current batch
+                step += 1                                                       # Count one more iteration step
+                model.eval()                                                    # Deactivate dropout to test the model
 
-            # Initialize the validation metrics
-            val_loss = 0
-            val_acc = 0
-            val_auc = 0
+                # Initialize the validation metrics
+                val_loss = 0
+                val_acc = 0
+                val_auc = 0
 
-            # Loop through the validation data
-            for features, labels in val_dataloader:
-                # Turn off gradients for validation, saves memory and computations
-                with torch.no_grad():
-                    features, labels = features.float(), labels.float()             # Make the data have type float instead of double, as it would cause problems
-                    features, labels, x_lengths = sort_by_seq_len(features, seq_len_dict, labels) # Sort the data by sequence length
-                    scores = model.forward(features[:, :, 2:], x_lengths)           # Feedforward the data through the model
-                                                                                    # (the 2 is there to avoid using the identifier features in the predictions)
+                # Loop through the validation data
+                for features, labels in val_dataloader:
+                    # Turn off gradients for validation, saves memory and computations
+                    with torch.no_grad():
+                        features, labels = features.float(), labels.float()             # Make the data have type float instead of double, as it would cause problems
+                        features, labels, x_lengths = sort_by_seq_len(features, seq_len_dict, labels) # Sort the data by sequence length
+                        scores = model.forward(features[:, :, 2:], x_lengths)           # Feedforward the data through the model
+                                                                                        # (the 2 is there to avoid using the identifier features in the predictions)
 
-                    # Adjust the labels so that it gets the exact same shape as the predictions
-                    # (i.e. sequence length = max sequence length of the current batch, not the max of all the data)
-                    labels = torch.nn.utils.rnn.pack_padded_sequence(labels, x_lengths, batch_first=True)
-                    labels, _ = torch.nn.utils.rnn.pad_packed_sequence(labels, batch_first=True, padding_value=padding_value)
+                        # Adjust the labels so that it gets the exact same shape as the predictions
+                        # (i.e. sequence length = max sequence length of the current batch, not the max of all the data)
+                        labels = torch.nn.utils.rnn.pack_padded_sequence(labels, x_lengths, batch_first=True)
+                        labels, _ = torch.nn.utils.rnn.pad_packed_sequence(labels, batch_first=True, padding_value=padding_value)
 
-                    # [TODO] Clip gradients to avoid exploding gradient
-                    val_loss += model.loss(scores, labels, x_lengths)               # Calculate and add the validation loss of the current batch
-                    mask = (labels <= 1).view_as(scores).float()                    # Create a mask by filtering out all labels that are not a padding value
-                    unpadded_labels = torch.masked_select(labels.contiguous().view_as(scores), mask.byte()) # Completely remove the padded values from the labels using the mask
-                    unpadded_scores = torch.masked_select(scores, mask.byte())      # Completely remove the padded values from the scores using the mask
-                    pred = torch.round(unpadded_scores)                             # Get the predictions
-                    correct_pred = pred == unpadded_labels                          # Get the correct predictions
-                    val_acc += torch.mean(correct_pred.type(torch.FloatTensor))     # Add the validation accuracy of the current batch, ignoring all padding values
-                    val_auc += roc_auc_score(unpadded_labels.numpy(), unpadded_scores.detach().numpy()) # Add the validation ROC AUC of the current batch
+                        # [TODO] Clip gradients to avoid exploding gradient
+                        val_loss += model.loss(scores, labels, x_lengths)               # Calculate and add the validation loss of the current batch
+                        mask = (labels <= 1).view_as(scores).float()                    # Create a mask by filtering out all labels that are not a padding value
+                        unpadded_labels = torch.masked_select(labels.contiguous().view_as(scores), mask.byte()) # Completely remove the padded values from the labels using the mask
+                        unpadded_scores = torch.masked_select(scores, mask.byte())      # Completely remove the padded values from the scores using the mask
+                        pred = torch.round(unpadded_scores)                             # Get the predictions
+                        correct_pred = pred == unpadded_labels                          # Get the correct predictions
+                        val_acc += torch.mean(correct_pred.type(torch.FloatTensor))     # Add the validation accuracy of the current batch, ignoring all padding values
+                        val_auc += roc_auc_score(unpadded_labels.numpy(), unpadded_scores.detach().numpy()) # Add the validation ROC AUC of the current batch
 
-            # Calculate the average of the metrics over the batches
-            val_loss = val_loss / len(val_dataloader)
-            val_acc = val_acc / len(val_dataloader)
-            val_auc = val_auc / len(val_dataloader)
+                # Calculate the average of the metrics over the batches
+                val_loss = val_loss / len(val_dataloader)
+                val_acc = val_acc / len(val_dataloader)
+                val_auc = val_auc / len(val_dataloader)
 
 
-            # Display validation loss
-            if step%print_every == 0:
-                print(f'Epoch {epoch} step {step}: Validation loss: {val_loss}; Validation Accuracy: {val_acc}; Validation AUC: {val_auc}')
+                # Display validation loss
+                if step%print_every == 0:
+                    print(f'Epoch {epoch} step {step}: Validation loss: {val_loss}; Validation Accuracy: {val_acc}; Validation AUC: {val_auc}')
 
-            # Check if the performance obtained in the validation set is the best so far (lowest loss value)
-            if val_loss < val_loss_min:
-                print(f'New minimum validation loss: {val_loss_min} -> {val_loss}.')
+                # Check if the performance obtained in the validation set is the best so far (lowest loss value)
+                if val_loss < val_loss_min:
+                    print(f'New minimum validation loss: {val_loss_min} -> {val_loss}.')
 
-                # Update the minimum validation loss
-                val_loss_min = val_loss
+                    # Update the minimum validation loss
+                    val_loss_min = val_loss
 
-                # Get the current day and time to attach to the saved model's name
-                current_datetime = datetime.now().strftime('%d_%m_%Y_%H_%M')
+                    # Get the current day and time to attach to the saved model's name
+                    current_datetime = datetime.now().strftime('%d_%m_%Y_%H_%M')
 
-                # Filename and path where the model will be saved
-                model_filename = f'{model_path}checkpoint_{current_datetime}.pth'
+                    # Filename and path where the model will be saved
+                    model_filename = f'{model_path}checkpoint_{current_datetime}.pth'
 
-                print(f'Saving model in {model_filename}')
+                    print(f'Saving model in {model_filename}')
 
-                # Save the best performing model so far, a long with additional information to implement it
-                checkpoint = {'n_inputs': model.n_inputs,
-                              'n_hidden': model.n_hidden,
-                              'n_outputs': model.n_outputs,
-                              'n_layers': model.n_layers,
-                              'p_dropout': model.p_dropout,
-                              'state_dict': model.state_dict()}
-                torch.save(checkpoint, model_filename)
+                    # Save the best performing model so far, a long with additional information to implement it
+                    checkpoint = {'n_inputs': model.n_inputs,
+                                  'n_hidden': model.n_hidden,
+                                  'n_outputs': model.n_outputs,
+                                  'n_layers': model.n_layers,
+                                  'p_dropout': model.p_dropout,
+                                  'state_dict': model.state_dict()}
+                    torch.save(checkpoint, model_filename)
 
-                if log_comet_ml and comet_ml_save_model:
-                    # Upload the model to Comet.ml
-                    experiment.log_asset(file_data=model_filename, overwrite=True)
+                    if log_comet_ml and comet_ml_save_model:
+                        # Upload the model to Comet.ml
+                        experiment.log_asset(file_data=model_filename, overwrite=True)
 
-        # Calculate the average of the metrics over the epoch
-        train_loss = train_loss / len(train_dataloader)
-        train_acc = train_acc / len(train_dataloader)
-        train_auc = train_auc / len(train_dataloader)
+            # Calculate the average of the metrics over the epoch
+            train_loss = train_loss / len(train_dataloader)
+            train_acc = train_acc / len(train_dataloader)
+            train_auc = train_auc / len(train_dataloader)
 
-        if log_comet_ml:
-            # Log metrics to Comet.ml
-            experiment.log_metric("train_loss", train_loss, step=epoch)
-            experiment.log_metric("train_acc", train_acc, step=epoch)
-            experiment.log_metric("train_auc", train_auc, step=epoch)
-            experiment.log_metric("val_loss", val_loss, step=epoch)
-            experiment.log_metric("val_acc", val_acc, step=epoch)
-            experiment.log_metric("val_auc", val_auc, step=epoch)
-            experiment.log_metric("epoch", epoch)
+            if log_comet_ml:
+                # Log metrics to Comet.ml
+                experiment.log_metric("train_loss", train_loss, step=epoch)
+                experiment.log_metric("train_acc", train_acc, step=epoch)
+                experiment.log_metric("train_auc", train_auc, step=epoch)
+                experiment.log_metric("val_loss", val_loss, step=epoch)
+                experiment.log_metric("val_acc", val_acc, step=epoch)
+                experiment.log_metric("val_auc", val_auc, step=epoch)
+                experiment.log_metric("epoch", epoch)
 
-        # Print a report of the epoch
-        print(f'Epoch {epoch}: Training loss: {train_loss}; Training Accuracy: {train_acc}; Training AUC: {train_auc}; \
-                Validation loss: {val_loss}; Validation Accuracy: {val_acc}; Validation AUC: {val_auc}')
-        print('----------------------')
+            # Print a report of the epoch
+            print(f'Epoch {epoch}: Training loss: {train_loss}; Training Accuracy: {train_acc}; Training AUC: {train_auc}; \
+                    Validation loss: {val_loss}; Validation Accuracy: {val_acc}; Validation AUC: {val_auc}')
+            print('----------------------')
+        except:
+            warnings.warn(f'There was a problem doing training epoch {epoch}. Ending training.')
 
-    if do_test:
+    if do_test and model_filename is not None:
         # Load the model with the best validation performance
         model = load_checkpoint(model_filename)
 
         # Run inference on the test data
-        model_inference(model, test_dataloader, seq_len_dict, experiment=experiment)
+        model_inference(model, seq_len_dict, dataloader=test_dataloader , experiment=experiment)
 
     if log_comet_ml:
         # Only report that the experiment completed successfully if it finished the training without errors
         experiment.log_other("completed", True)
+
+    if get_val_loss_min:
+        # Also return the minimum validation loss alongside the corresponding model
+        return model, val_loss_min.item()
 
     return model

@@ -24,16 +24,11 @@ if args.comet_ml_api_key is not None and \
    args.comet_ml_project_name is not None and \
    args.comet_ml_workspace is not None:
     log_comet_ml = True
-
-    # Create a Comet.ml experiment
-    experiment = comet_ml.Experiment(api_key=args.comet_ml_api_key,
-                                     project_name=args.comet_ml_project_name,
-                                     workspace=args.comet_ml_workspace)
 else:
     log_comet_ml = False
     warnings.warn('All necessary Comet.ml parameters (comet_ml_api_key, \
                    comet_ml_project_name, comet_ml_workspace) must be correctly \
-                   specified. Otherwise, model version control won\'t be available.')
+                   specified. Otherwise, the parameter optimization won\'t work.')
 
 # Set random seed to the specified value
 np.random.seed(utils.random_seed)
@@ -53,13 +48,27 @@ ALS_df = pd.read_csv(f'{data_path}FCUL_ALS_cleaned.csv')
 # Drop the unnamed index and the NIV columns
 ALS_df.drop(columns=['Unnamed: 0', 'niv'], inplace=True)
 
-# Neural network and dataset parameters
+# Dataset parameters
 n_patients = ALS_df.subject_id.nunique()     # Total number of patients
 n_inputs = len(ALS_df.columns)               # Number of input features
-n_hidden = 1052                              # Number of hidden units
 n_outputs = 1                                # Number of outputs
-n_layers = 2                                 # Number of LSTM layers
-p_dropout = 0.2                              # Probability of dropout
+
+if log_comet_ml:
+    # Create a Comet.ml parameter optimizer:
+    param_optimizer = comet_ml.Optimizer(api_key=args.comet_ml_api_key)
+
+    # Neural network parameters to be optimized with Comet.ml
+    params = """
+                    n_hidden integer [500, 2000] [1052]
+                    n_layers integer [1, 4] [2]
+                    p_dropout real [0, 0.5] [0.2]
+             """
+
+    # Report to the optimizer the parameters that will be optimized
+    param_optimizer.set_params(params)
+
+# Maximum number of iterations to do in the parameter optimization
+max_optim_iter = 100
 
 print('Building a dictionary containing the sequence length of each patient\'s time series...')
 
@@ -75,20 +84,9 @@ padding_value = 999999
 # Pad data (to have fixed sequence length) and convert into a PyTorch tensor
 data = utils.dataframe_to_padded_tensor(ALS_df, seq_len_dict, n_patients, n_inputs, padding_value=padding_value)
 
-print('Instantiating the model...')
-
-# Instantiate the model (removing the two identifier columns and the labels from the input size)
-model = NeuralNetwork(n_inputs-3, n_hidden, n_outputs, n_layers, p_dropout)
-
-# Check if GPU (CUDA) is available
-train_on_gpu = torch.cuda.is_available()
-
-if train_on_gpu:
-    model = model.cuda()                        # Move the model to the GPU
-
 # Training parameters
 batch_size = 32                                 # Number of patients in a mini batch
-n_epochs = 50                                   # Number of epochs
+n_epochs = 20                                   # Number of epochs
 lr = 0.001                                      # Learning rate
 
 print('Creating a dataset object...')
@@ -102,14 +100,47 @@ print('Distributing the data to train, validation and test sets and getting thei
 train_dataloader, val_dataloader, test_dataloader = utils.create_train_sets(dataset, test_train_ratio=0.2, validation_ratio=0.1,
                                                                             batch_size=batch_size, get_indeces=False)
 
-print('Training the model...')
+# Start off with a minimum validation score of infinity
+val_loss_min = np.inf
 
-# Train the model
-model = utils.train(model, train_dataloader, val_dataloader, test_dataloader,
-                    seq_len_dict, batch_size, n_epochs, lr,
-                    model_path='GitHub/FCUL_ALS_Disease_Progression/models/',
-                    padding_value=padding_value, do_test=True,
-                    log_comet_ml=log_comet_ml,
-                    comet_ml_save_model=args.comet_ml_save_model,
-                    # experiment=experiment,
-                    features_list=list(ALS_df.columns).remove('niv_label'))
+for iter in range(max_optim_iter):
+    print('Starting a new parameter optimization iteration...')
+
+    # Create a new Comet.ml experiment
+    experiment = comet_ml.Experiment(api_key=args.comet_ml_api_key,
+                                     project_name=args.comet_ml_project_name,
+                                     workspace=args.comet_ml_workspace)
+
+    try:
+        # Get a suggestion
+        suggestion = param_optimizer.get_suggestion()
+    except comet_ml.NoMoreSuggestionsAvailable:
+        # get_suggestion() will raise an exception when no new suggestions are available
+        break
+
+    # Instantiate the model (removing the two identifier columns and the labels from the input size)
+    model = NeuralNetwork(n_inputs-3, suggestion['n_hidden'], n_outputs,
+                          suggestion['n_layers'], suggestion['p_dropout'])
+
+    # Check if GPU (CUDA) is available
+    train_on_gpu = torch.cuda.is_available()
+
+    if train_on_gpu:
+        model = model.cuda()                        # Move the model to the GPU
+
+    print('Training the model...')
+
+    # Train the model and get the minimum validation loss
+    model, val_loss_min = utils.train(model, train_dataloader, val_dataloader, test_dataloader,
+                                      seq_len_dict, batch_size, n_epochs, lr,
+                                      model_path='models/',
+                                      padding_value=padding_value, do_test=True,
+                                      log_comet_ml=log_comet_ml,
+                                      comet_ml_save_model=args.comet_ml_save_model,
+                                      experiment=experiment,
+                                      features_list=list(ALS_df.columns).remove('niv_label'),
+                                      get_val_loss_min=True,
+                                      optim_score=val_loss_min)
+
+    # Report the minimum validation loss achieved so that the parameter optimizer updates the score
+    suggestion.report_score('val_loss_min', val_loss_min)

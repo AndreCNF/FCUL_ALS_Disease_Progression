@@ -6,12 +6,12 @@
 #     text_representation:
 #       extension: .py
 #       format_name: light
-#       format_version: '1.3'
-#       jupytext_version: 1.0.4
+#       format_version: '1.4'
+#       jupytext_version: 1.1.3
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: fcul-als-python
 #     language: python
-#     name: python3
+#     name: fcul-als-python
 # ---
 
 # # FCUL ALS Data Exploration
@@ -51,27 +51,6 @@ data_path = 'Datasets/Thesis/FCUL_ALS/'
 # + {"colab": {}, "colab_type": "code", "id": "fZCUmUOzCPeI"}
 import plotly.offline as py
 plotly.offline.init_notebook_mode(connected=True)
-
-
-# + {"colab_type": "text", "id": "Yrzi8YbzDVTH", "cell_type": "markdown"}
-# **Important:** The following function is needed in every Google Colab cell that contains a Plotly chart:
-
-# + {"colab": {}, "colab_type": "code", "id": "wxyGCedgC6bX"}
-def configure_plotly_browser_state():
-    import IPython
-    display(IPython.core.display.HTML('''
-        <script src="/static/components/requirejs/require.js"></script>
-        <script>
-          requirejs.config({
-            paths: {
-              base: '/static/base',
-              plotly: 'https://cdn.plot.ly/plotly-latest.min.js?noext',
-            },
-          });
-        </script>
-        '''))
-
-
 # -
 
 # ## Exploring the preprocessed dataset

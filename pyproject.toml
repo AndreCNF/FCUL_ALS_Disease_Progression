@@ -17,6 +17,7 @@ colorlover = "^0.3.0"
 comet_ml = "^1.0"
 
 [tool.poetry.dev-dependencies]
+pylint = "^2.3"
 
 [build-system]
 requires = ["poetry>=0.12"]

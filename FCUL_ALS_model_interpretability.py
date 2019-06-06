@@ -101,6 +101,8 @@ orig_ALS_df.head()
 ALS_df.drop(columns=['Unnamed: 0', 'niv'], inplace=True)
 ALS_df.head()
 
+orig_ALS_df.niv_label.value_counts()
+
 # Drop the unnamed index and label columns in the original dataframe
 orig_ALS_df.drop(columns=['Unnamed: 0', 'niv_label', 'niv'], inplace=True)
 orig_ALS_df.head()
@@ -314,11 +316,17 @@ with open(interpreter_filename, 'wb') as file:
 
 # Load saved model interpreter object
 # with open(interpreter_filename, 'rb') as file:
-with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_14_05_2019_02_12.pickle', 'rb') as file:
+with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_02_06_2019_15_32.pickle', 'rb') as file:
     interpreter_loaded = pickle.load(file)
 
 if np.array_equal(interpreter_loaded.feat_scores, interpreter.feat_scores):
+    print('The model interpreter object was correctly saved.')
     interpreter = interpreter_loaded
+else:
+    print('ERROR: There was a problem saving the model interpreter object.')
+
+# Only to use when analysing a model interpreter, after having already been saved
+interpreter = interpreter_loaded
 
 # ### Feature importance plots
 
@@ -343,11 +351,7 @@ patient = 0
 seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
 
 # Plot the explanation of the predictions for one patient
-# shap.force_plot(interpreter_loaded.explainer.expected_value[0], 
-#                 interpreter_loaded.feat_scores[patient, :seq_len], 
-#                 features=test_features_denorm[patient, :seq_len, 2:].numpy(), 
-#                 feature_names=ALS_cols)
-shap.force_plot(0.2, 
+shap.force_plot(interpreter.explainer.expected_value[0], 
                 interpreter.feat_scores[patient, :seq_len], 
                 features=test_features_denorm[patient, :seq_len, 2:].numpy(), 
                 feature_names=ALS_cols)
@@ -356,19 +360,25 @@ shap.force_plot(0.2,
 shap.initjs()
 
 # Choosing which example to use
-patient = 0
-ts = 1
+patient = 25
+ts = 9
 
 # Plot the explanation of one prediction
-# shap.force_plot(explainer.expected_value[0], 
-#                 shap_values[patient][ts], 
-#                 features=test_features_denorm[patient, ts, 2:].numpy(), 
-#                 feature_names=ALS_cols)
-shap.force_plot(0.2, 
+shap.force_plot(interpreter.explainer.expected_value[0], 
                 interpreter.feat_scores[patient][ts], 
                 features=test_features_denorm[patient, ts, 2:].numpy(), 
                 feature_names=ALS_cols)
 # -
+# **Comments:**
+#
+# * It seems like the SHAP values aren't indexed in the same way as the instance importance scores. Patients such as 125 shouldn't be highly probable of NIV use, with high influence of timestamps 9 and 10, and then have such a low estimated output value in the feature importance part.
+#
+# * On the other hand, the dataframe query bellow shows that the data is indeed as it's shown in the force plot. There might be some critical problem in the way SHAP is calculating this values or at least the expected output value.
+
+orig_ALS_df[orig_ALS_df.subject_id == 125][['ts', 'p2', 'p4', 'p7', 'p9', '1r', 'p5', '3r', 'p10']]
+
+interpreter.feat_scores.shape
+
 # ### Instance importance plots
 
 # interpreter_loaded.inst_scores[interpreter_loaded.inst_scores == interpreter_loaded.padding_value]
@@ -390,27 +400,6 @@ layout = go.Layout(
                   )
 fig = go.Figure(data=data, layout=layout)
 py.iplot(fig, filename='basic-bar')
-
-# +
-# Choosing which example to use
-patient = 0
-
-# True sequence length of the current patient's data
-seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
-
-# Plot the instance importance of one sequence
-data = [go.Scatter(
-                    x = list(range(seq_len)),
-                    y = interpreter_loaded.inst_scores[patient, :seq_len],
-                    mode = 'lines+markers'
-                  )]
-layout = go.Layout(
-                    title=f'Instance importance scores for patient {int(test_features_denorm[0, 0, 0])}',
-                    xaxis=dict(title='Instance'),
-                    yaxis=dict(title='Importance scores')
-                  )
-fig = go.Figure(data, layout)
-py.iplot(fig)
 
 # +
 # Choosing which example to use
@@ -483,6 +472,11 @@ test_features[:n_patients].shape
 interpreter.inst_scores.shape
 
 test_features[:n_patients, 0, 0]
+
+# Find index in a tensor where it has the specified value
+(test_features[:n_patients, 0, 0] == 125).nonzero().item()
+
+test_features[25, 0, 0]
 
 interpreter.instance_importance_plot(test_features[:n_patients], interpreter.inst_scores, pred_prob=pred_prob)
 
