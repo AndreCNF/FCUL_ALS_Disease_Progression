@@ -86,6 +86,11 @@ train_on_gpu = torch.cuda.is_available()
 if train_on_gpu:
     model = model.cuda()                        # Move the model to the GPU
 
+# Set gradient clipping to avoid exploding gradients
+clip_value = 10
+for p in model.parameters():
+    p.register_hook(lambda grad: torch.clamp(grad, -clip_value, clip_value))
+
 # Training parameters
 batch_size = 32                                 # Number of patients in a mini batch
 n_epochs = 50                                   # Number of epochs
@@ -111,5 +116,5 @@ model = utils.train(model, train_dataloader, val_dataloader, test_dataloader,
                     padding_value=padding_value, do_test=True,
                     log_comet_ml=log_comet_ml,
                     comet_ml_save_model=args.comet_ml_save_model,
-                    # experiment=experiment,
+                    experiment=experiment,
                     features_list=list(ALS_df.columns).remove('niv_label'))

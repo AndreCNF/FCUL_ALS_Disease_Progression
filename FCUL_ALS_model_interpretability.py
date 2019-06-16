@@ -121,8 +121,8 @@ for unused_feature in ['subject_id', 'ts', 'niv_label']:
 ALS_cols
 
 # Load the model with the best validation performance
-# model = utils.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_26_04_2019_23_36.pth')
-model = utils.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_no_NIV_10_05_2019_03_03.pth')
+# model = utils.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_no_NIV_10_05_2019_03_03.pth')
+model = utils.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_07_06_2019_23_14.pth')
 
 model
 
@@ -135,7 +135,7 @@ seq_len_dict = dict([(idx, val[0]) for idx, val in list(zip(seq_len_df.index, se
 # +
 n_patients = ALS_df.subject_id.nunique()     # Total number of patients
 n_inputs = len(ALS_df.columns)               # Number of input features
-padding_value = 999999                       # Value to be used in the padding
+padding_value = np.nan                       # Value to be used in the padding
 
 # Pad data (to have fixed sequence length) and convert into a PyTorch tensor
 data = utils.dataframe_to_padded_tensor(ALS_df, seq_len_dict, n_patients, n_inputs, padding_value=padding_value)
@@ -291,13 +291,14 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 #
 # Using my custom class for model interpretability through instance and feature importance.
 
-interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=False, SHAP_bkgnd_samples=200)
+# + {"pixiedust": {"displayParams": {}}}
+interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=False, SHAP_bkgnd_samples=200, padding_value=np.nan)
 
 # + {"pixiedust": {"displayParams": {}}}
 # Number of patients to analyse
 n_patients = 50
 
-_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=True, feature_importance=False)
+_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=False, feature_importance=True)
 
 # +
 # Get the current day and time to attach to the saved model's name
@@ -316,7 +317,7 @@ with open(interpreter_filename, 'wb') as file:
 
 # Load saved model interpreter object
 # with open(interpreter_filename, 'rb') as file:
-with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_02_06_2019_15_32.pickle', 'rb') as file:
+with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_15_06_2019_19_04.pickle', 'rb') as file:
     interpreter_loaded = pickle.load(file)
 
 if np.array_equal(interpreter_loaded.feat_scores, interpreter.feat_scores):
@@ -327,6 +328,8 @@ else:
 
 # Only to use when analysing a model interpreter, after having already been saved
 interpreter = interpreter_loaded
+
+interpreter.feat_scores[0, :x_lengths_test[0]]
 
 # ### Feature importance plots
 
@@ -340,12 +343,24 @@ shap.summary_plot(interpreter.feat_scores.reshape(-1, model.lstm.input_size),
                   features=test_features_denorm[:, :, 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy(), 
                   feature_names=ALS_cols, plot_type='violin')
 
+# **Comments:**
+#
+# [Using padding value of 999999]
+#
+# * The above summary plot isn't clear, as there doesn't seem to be any distinction between feature's high and low values impact on the output. However, it might be doe to padding values being used in the background data (same reason for the predictions bellow also being wrong).
+#
+# [Using padding value of 0]
+#
+# * The plot now makes perfect sense, showing the different effects of low or high values of each feature, with apparently realistic reasoning. This also confirms that the paddings are still messing with the SHAP values calculation.
+
+# Choosing which example to use
+subject_id = 125
+patient = utils.find_subject_idx(test_features_denorm, subject_id=subject_id)
+patient
+
 # +
 # Init the JS visualization code
 shap.initjs()
-
-# Choosing which example to use
-patient = 0
 
 # True sequence length of the current patient's data
 seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
@@ -359,9 +374,8 @@ shap.force_plot(interpreter.explainer.expected_value[0],
 # Init the JS visualization code
 shap.initjs()
 
-# Choosing which example to use
-patient = 25
-ts = 9
+# Choosing which timestamp to use
+ts = 10
 
 # Plot the explanation of one prediction
 shap.force_plot(interpreter.explainer.expected_value[0], 
@@ -371,13 +385,26 @@ shap.force_plot(interpreter.explainer.expected_value[0],
 # -
 # **Comments:**
 #
-# * It seems like the SHAP values aren't indexed in the same way as the instance importance scores. Patients such as 125 shouldn't be highly probable of NIV use, with high influence of timestamps 9 and 10, and then have such a low estimated output value in the feature importance part.
+# [Using padding value of 999999]
+#
+# * It seems as if the SHAP values weren't indexed in the same way as the instance importance scores. Patients such as 125 shouldn't be highly probable of NIV use, with high influence of timestamps 9 and 10, and then have such a low estimated output value in the feature importance part.
 #
 # * On the other hand, the dataframe query bellow shows that the data is indeed as it's shown in the force plot. There might be some critical problem in the way SHAP is calculating this values or at least the expected output value.
+#
+# [Using padding value of 0]
+#
+# * Although the summary plot improved, the force plots still show incorrect prediction values, most likely due to the interference of the padding values.
+#
+# * I might need to make my own version of a Shapley values estimator, adapted for multivariate sequential data and PyTorch, making it only select non-padding values from the background data and use the current hidden state in the model's output.
 
-orig_ALS_df[orig_ALS_df.subject_id == 125][['ts', 'p2', 'p4', 'p7', 'p9', '1r', 'p5', '3r', 'p10']]
+ref_output = interpreter.model(test_features[patient, :, 2:].float().unsqueeze(0), [x_lengths_test[patient]])
 
-interpreter.feat_scores.shape
+ref_output_s = pd.Series([float(x) for x in list(ref_output.detach().numpy())])
+
+# Get an overview of the important features and model output for the current patient
+orig_ALS_df[orig_ALS_df.subject_id == subject_id][['ts', 'p0.1', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9',
+                                                   'p10', '1r', '2r', '3r', 'phrenmeanampl', 'mip']] \
+                                                 .reset_index().drop(columns='index').assign(output=ref_output_s)
 
 # ### Instance importance plots
 
@@ -402,9 +429,6 @@ fig = go.Figure(data=data, layout=layout)
 py.iplot(fig, filename='basic-bar')
 
 # +
-# Choosing which example to use
-patient = 0
-
 # True sequence length of the current patient's data
 seq_len = seq_len_dict[test_features[patient, 0, 0].item()]
 
@@ -451,9 +475,6 @@ sequence_data.shape
 
 ref_output[-1].item() - new_output[-1].item()
 
-# **Comments:**
-# * The fact that the result of the last cell (-6.099371239542961e-05) is so different from the instance importance score assigned to the instance (-0.974) proves that something is clearly wrong in the instance_importance method.
-
 x_lengths_test_cumsum = np.cumsum(x_lengths_test[:5])
 x_lengths_test_cumsum
 
@@ -471,13 +492,4 @@ test_features[:n_patients].shape
 
 interpreter.inst_scores.shape
 
-test_features[:n_patients, 0, 0]
-
-# Find index in a tensor where it has the specified value
-(test_features[:n_patients, 0, 0] == 125).nonzero().item()
-
-test_features[25, 0, 0]
-
 interpreter.instance_importance_plot(test_features[:n_patients], interpreter.inst_scores, pred_prob=pred_prob)
-
-

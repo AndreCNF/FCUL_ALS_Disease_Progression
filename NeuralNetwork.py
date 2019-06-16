@@ -21,22 +21,28 @@ class NeuralNetwork(nn.Module):
         # Dropout used between the last LSTM layer and the fully connected layer
         self.dropout = nn.Dropout(p=self.p_dropout)
 
-    def forward(self, x, x_lengths=None, get_hidden_state=False):
+    def forward(self, x, x_lengths=None, get_hidden_state=False, hidden_state=None):
         # Get the batch size (might not be always the same)
         batch_size = x.shape[0]
 
-        # Reset the LSTM hidden state. Must be done before you run a new batch. Otherwise the LSTM will treat
-        # a new batch as a continuation of a sequence.
-        self.hidden = self.init_hidden(batch_size)
+        if hidden_state is None:
+            # Reset the LSTM hidden state. Must be done before you run a new batch. Otherwise the LSTM will treat
+            # a new batch as a continuation of a sequence.
+            self.hidden = self.init_hidden(batch_size)
+        else:
+            # Use the specified hidden state
+            self.hidden = hidden_state
 
-        # pack_padded_sequence so that padded items in the sequence won't be shown to the LSTM
-        x = torch.nn.utils.rnn.pack_padded_sequence(x, x_lengths, batch_first=True)
+        if x_lengths is not None:
+            # pack_padded_sequence so that padded items in the sequence won't be shown to the LSTM
+            x = torch.nn.utils.rnn.pack_padded_sequence(x, x_lengths, batch_first=True)
 
         # Get the outputs and hidden states from the LSTM layer(s)
         lstm_output, self.hidden = self.lstm(x, self.hidden)
 
-        # Undo the packing operation
-        lstm_output, _ = torch.nn.utils.rnn.pad_packed_sequence(lstm_output, batch_first=True)
+        if x_lengths is not None:
+            # Undo the packing operation
+            lstm_output, _ = torch.nn.utils.rnn.pad_packed_sequence(lstm_output, batch_first=True)
 
         # Apply dropout to the last LSTM layer
         lstm_output = self.dropout(lstm_output)

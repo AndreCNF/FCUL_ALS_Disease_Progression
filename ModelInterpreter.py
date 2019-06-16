@@ -23,7 +23,7 @@ NEG_COLOR = 'rgba(30,136,229,1)'
 class ModelInterpreter:
     def __init__(self, model, data, labels, seq_len_dict=None, id_column=0, inst_column=1,
                  fast_calc=True, SHAP_bkgnd_samples=1000, random_seed=42,
-                 feat_names=None, padding_value=999999):
+                 feat_names=None, padding_value=999999, occlusion_wgt=0.7):
         '''A machine learning model interpreter which calculates instance and
         feature importance.
 
@@ -71,6 +71,16 @@ class ModelInterpreter:
             to fetch the names of the columns.
         padding_value : numeric
             Value to use in the padding, to fill the sequences.
+        occlusion_wgt : float, default 0.75
+            Weight given to the occlusion part of the instance importance score.
+            This scores is calculated as a weighted average of the instance's
+            influence on the final output and the variation of the output
+            probability, between the current instance and the previous one. As
+            such, this weight should have a value between 0 and 1, with the
+            output variation receiving the remaining weight (1 - occlusion_wgt),
+            where 0 corresponds to not using the occlusion component at all, 0.5
+            is a normal, unweighted average and 1 deactivates the use of the
+            output variation part.
         '''
         # Initialize parameters according to user input
         self.model = model
@@ -82,6 +92,7 @@ class ModelInterpreter:
         self.random_seed = random_seed
         self.feat_names = feat_names
         self.padding_value = padding_value
+        self.occlusion_wgt = occlusion_wgt
 
         # Put the model in evaluation mode to deactivate dropout
         self.model.eval()
@@ -92,7 +103,6 @@ class ModelInterpreter:
         elif type(data) is pd.DataFrame:
             n_ids = data.iloc[:, self.id_column].nunique()      # Total number of unique sequence identifiers
             n_features = len(data.columns)                      # Number of input features
-            self.padding_value = 999999                         # Value to be used in the padding
 
             # Find the sequence lengths of the data
             self.seq_len_dict = self.calc_seq_len_dict(data)
@@ -126,6 +136,38 @@ class ModelInterpreter:
         # Declare attributes that will store importance scores (instance and feature importance)
         self.inst_scores = None
         self.feat_scores = None
+
+    def find_subject_idx(subject_id, data=None, subject_id_col=0):
+        '''Find the index that corresponds to a given subject in a data tensor.
+
+        Parameters
+        ----------
+        subject_id : int or string
+            Unique identifier of the subject whose index on the data tensor one
+            wants to find out.
+        data : torch.Tensor, default None
+            PyTorch tensor containing the data on which the subject's index will be
+            searched for. If not specified, all data known to the model
+            interpreter will be used.
+        subject_id_col : int, default 0
+            The number of the column in the data tensor that stores the subject
+            identifiers. If not specified, subject id column number previously
+            defined in the model interpreter will be used.
+
+        Returns
+        -------
+        idx : int
+            Index where the specified subject appears in the data tensor.'''
+        if data is None:
+            # If a subset of data to interpret isn't specified, the interpreter will use all the data
+            data = self.data
+
+        if subject_id_col is None:
+            # If the subject id column number isn't specified, the interpreter
+            # will use its previously defined one
+            subject_id_col = self.id_column
+
+        return (data[:, 0, subject_id_col] == subject_id).nonzero().item()
 
     def create_bkgnd_test_sets(self, shuffle_dataset=True):
         '''Distributes the data into background and test sets and returns
@@ -182,10 +224,173 @@ class ModelInterpreter:
         seq_len_dict = dict([(idx, val[0]) for idx, val in list(zip(seq_len_df.index, seq_len_df.values))])
         return seq_len_dict
 
-    # [TODO] Analyse other options for the calculation of instance importance scores
-    # (e.g. scaling with logarithm or sigmoid, average with variation of output since the previous instance, etc)
+    def mask_filter_step(self, mask, optimizer, data, l1_coeff=1, hidden_state=None):
+        '''Perform a single optimization step to calculate a new version of the
+        mask filter.
+
+        Parameters
+        ----------
+        mask : numpy.Array
+            Current mask filter, either the initial one or from the previous
+            optimization iteration.
+        optimizer : torch.optim
+            Optimizer used in the calculation of the mask filter.
+        data : torch.Tensor
+            Data sample which will be used to determine the most relevant
+            features. In case of multivariate sequential data, this must be a
+            single instance of a sequence.
+        l1_coeff : int, default 1
+            Weight given in the loss function to the L1 norm of the mask filter.
+        hidden_state : torch.Tensor or tuple of two torch.Tensor, default None
+            Hidden state coming from the previous recurrent cell. If none is
+            specified, the hidden state is initialized as zero.
+
+        Returns
+        -------
+        mask : numpy.Array
+            Current mask filter, after the performed optimization step.
+        optimizer : torch.optim
+            Optimizer used in the calculation of the mask filter, updated with
+            the performed step.
+        '''
+        # Clear the gradients of all optimized variables
+        optimizer.zero_grad()
+
+        # Get the model's output for the input data
+        output = self.model((mask * data).unsqueeze(0).unsqueeze(0), hidden_state=hidden_state)
+
+        # Calculate the loss function
+        loss = l1_coeff * torch.mean(torch.abs(1 - mask)) + output
+
+        # Backpropagate the loss function and run an optimization step (update the mask filter)
+        loss.backward()
+        optimizer.step()
+
+        # Make sure that the mask has values either 0 or 1
+        mask.clamp_(0, 1)
+        mask.round_()
+
+        return mask, optimizer
+
+    # [TODO] Confirm that the mask filter is working in every scenario
+    def mask_filter(self, data=None, x_lengths=None, max_iter=500, l1_coeff=1,
+                    lr=0.001, recur_layer=None):
+        '''Calculate a mask filter for the given data samples, through an
+        appropriate optimization.
+
+        Parameters
+        ----------
+        data : torch.Tensor, default None
+            Data sample(s) which will be used to determine the most relevant
+            features. In case of multivariate sequential data, each instance will
+            be analyzed seperately. If None, all data known to the model
+            interpreter will be used.
+        x_lengths : list of int
+            Sorted list of sequence lengths, relative to the input data.
+        max_iter : int, default 500
+            Maximum number of iterations of the mask filter optimization, for
+            each instance.
+        l1_coeff : int, default 1
+            Weight given in the loss function to the L1 norm of the mask filter.
+        lr : float, default 0.001
+            Learning rate used in the optimization algorithm.
+        recur_layer : torch.nn.LSTM or torch.nn.GRU or torch.nn.RNN, default None
+            Pointer to the recurrent layer in the model, if it exists. It should
+            either be a LSTM, GRU or RNN network. If none is specified, the
+            method will automatically search for a recurrent layer in the model.
+
+        Returns
+        -------
+        mask : numpy.Array
+            Output mask, after finishing the optimization for every specified
+            sample. It will be inverted before returning, so as to be an array
+            filled with zeros, except in the indeces corresponding to the most
+            relevant features, where it will be one.
+        '''
+        # [TODO] Work on an option to use input data different from multivariate sequential
+
+        # Confirm that the model is in evaluation mode to deactivate dropout
+        self.model.eval()
+
+        if data is None:
+            # If a subset of data to interpret isn't specified, the interpreter will use all the data
+            data = self.data
+
+        if x_lengths is None:
+            # Sort the data by sequence length
+            data, x_lengths = utils.sort_by_seq_len(data, self.seq_len_dict)
+
+        if len(data.shape) > 1 and recur_layer is None:
+            # Search for a recurrent layer
+            if hasattr(self.model, 'lstm') in self.model:
+                recur_layer = self.model.lstm
+            elif hasattr(self.model, 'gru') in self.model:
+                recur_layer = self.model.gru
+            elif hasattr(self.model, 'rnn') in self.model:
+                recur_layer = self.model.rnn
+            else:
+                raise Exception('ERROR: No recurrent layer found. Please specify it in the recur_layer argument.')
+
+        # Create a mask filter variable, initialized as an all ones tensor
+        mask = torch.ones(data.shape, requires_grad=True)
+
+        if len(data.shape) == 3:
+            # Loop to go through each sequence in the input data
+            for seq in range(data.shape[0]):
+                # Get the true length of the current sequence
+                seq_len =
+
+                # Loop to go through each instance in the input sequence
+                for inst in range(data.shape[1], seq_len):
+                    hidden_state = None
+                    # Get the hidden state that the model receives as an input
+                    if inst > 0:
+                        # Get the hidden state outputed from the previous recurrent cell
+                        _, hidden_state = recur_layer(data[:inst-1])
+
+                    # Instantiate an optimizer that will calculate the optimal mask filter for the current instance
+                    optimizer = torch.optim.Adam([mask[seq, inst, :]], lr=lr)
+
+                    # Mask filter optimization loop
+                    for iter in range(max_iter):
+                        # Perform a single optimization step
+                        mask, optimizer = mask_filter_step(mask, optimizer, data[seq, inst, :], l1_coeff, hidden_state)
+
+        elif len(data.shape) == 2:
+            # Loop to go through each instance in the input sequence
+            for inst in range(data.shape[0]):
+                hidden_state = None
+                # Get the hidden state that the model receives as an input
+                if inst > 0:
+                    # Get the hidden state outputed from the previous recurrent cell
+                    _, hidden_state = recur_layer(data[:inst-1])
+
+                # Instantiate an optimizer that will calculate the optimal mask filter for the current instance
+                optimizer = torch.optim.Adam([mask[inst]], lr=lr)
+
+                # Mask filter optimization loop
+                for iter in range(max_iter):
+                    # Perform a single optimization step
+                    mask, optimizer = mask_filter_step(mask, optimizer, data[inst], l1_coeff, hidden_state)
+
+        elif len(data.shape) == 1:
+            # Instantiate an optimizer that will calculate the optimal mask filter
+            optimizer = torch.optim.Adam([mask], lr=lr)
+
+            # Mask filter optimization loop
+            for iter in range(max_iter):
+                # Perform a single optimization step
+                mask, optimizer = mask_filter_step(mask, optimizer, data, l1_coeff)
+
+        else:
+            raise Exception(f'ERROR: Can\'t handle data with more than 3 dimensions. \
+                              Submitted data with {len(data.shape)} dimensions.')
+
+        # Return the inverted version of the mask, to atrribute 1 (one) to the most relevant features
+        return 1 - mask
+
     def instance_importance(self, data=None, labels=None, x_lengths=None,
-                            see_progress=True, occlusion_wgt=0.70):
+                            see_progress=True, occlusion_wgt=None):
         '''Calculate the instance importance scores to interpret the impact of
         each instance of a sequence on the final output.
 
@@ -203,7 +408,7 @@ class ModelInterpreter:
         see_progress : bool, default True
             If set to True, a progress bar will show up indicating the execution
             of the instance importance scores calculations.
-        occlusion_wgt : float, default 0.75
+        occlusion_wgt : float, default None
             Weight given to the occlusion part of the instance importance score.
             This scores is calculated as a weighted average of the instance's
             influence on the final output and the variation of the output
@@ -212,7 +417,9 @@ class ModelInterpreter:
             output variation receiving the remaining weight (1 - occlusion_wgt),
             where 0 corresponds to not using the occlusion component at all, 0.5
             is a normal, unweighted average and 1 deactivates the use of the
-            output variation part.
+            output variation part. If the value wasn't specified in the
+            intepreter's initialization nor in the method argument, it will
+            default to 0.7
 
         Returns
         -------
@@ -220,6 +427,15 @@ class ModelInterpreter:
             Array containing the importance scores of each instance in the
             given input sequences.
         '''
+        if occlusion_wgt is None:
+            if self.occlusion_wgt is not None:
+                # Set to the class's occlusion weight value
+                occlusion_wgt = self.occlusion_wgt
+            else:
+                # Set the occlusion weight value to 0.7 (default)
+                occlusion_wgt = 0.7
+                self.occlusion_wgt = occlusion_wgt
+
         # Confirm that the occlusion weight has a valid value (between 0 and 1)
         if occlusion_wgt > 1 or occlusion_wgt < 0:
             raise Exception(f'ERROR: Inserted invalid occlusion weight value {occlusion_wgt}. Please replace with a value between 0 and 1.')
@@ -308,15 +524,15 @@ class ModelInterpreter:
             return inst_score
 
         if see_progress:
-            # inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num], occlusion_wgt)
-            #                 for inst in range(x_lengths[seq_num])] for seq_num in self.progress_bar(range(data.shape[0]))]
+            inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num], occlusion_wgt)
+                            for inst in range(x_lengths[seq_num])] for seq_num in self.progress_bar(range(data.shape[0]))]
             # DEBUG
-            inst_scores = []
-            for seq_num in self.progress_bar(range(data.shape[0])):
-                tmp_list = []
-                for inst in range(x_lengths[seq_num]):
-                    tmp_list.append(calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num], occlusion_wgt))
-                inst_scores.append(tmp_list)
+            # inst_scores = []
+            # for seq_num in self.progress_bar(range(data.shape[0])):
+            #     tmp_list = []
+            #     for inst in range(x_lengths[seq_num]):
+            #         tmp_list.append(calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num], occlusion_wgt))
+            #     inst_scores.append(tmp_list)
         else:
             inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num], occlusion_wgt)
                             for inst in range(x_lengths[seq_num])] for seq_num in range(data.shape[0])]
@@ -328,23 +544,18 @@ class ModelInterpreter:
         inst_scores = np.array(inst_scores)
         return inst_scores
 
-    def feature_importance(self, bkgnd_data=None, test_data=None, x_lengths=None,
-                           fast_calc=None, see_progress=True):
+    def feature_importance(self, test_data=None, fast_calc=None,
+                           see_progress=True, bkgnd_data=None, max_iter=500,
+                           l1_coeff=1, lr=0.001, recur_layer=None):
         '''Calculate the feature importance scores to interpret the impact
         of each feature in each instance's output.
 
         Parameters
         ----------
-        bkgnd_data : torch.Tensor, default None
-            In case of setting fast_calc to True, which makes the algorithm use
-            SHAP in the feature importance, the background data used in the
-            explainer can be set through this parameter.
         test_data : torch.Tensor, default None
             Optionally, the user can specify a subset of data on which model
             interpretation will be made (i.e. calculating feature and/or
             instance importance). Otherwise, all the data is used.
-        x_lengths : list of int
-            Sorted list of sequence lengths, relative to the input data.
         fast_calc : bool, default None
             If set to True, the algorithm uses simple mask filters, occluding
             instances and replacing features with reference values, in order
@@ -354,6 +565,27 @@ class ModelInterpreter:
         see_progress : bool, default True
             If set to True, a progress bar will show up indicating the execution
             of the feature importance scores calculations.
+
+        if fast_calc is False:
+
+        bkgnd_data : torch.Tensor, default None
+            In case of setting fast_calc to True, which makes the algorithm use
+            SHAP in the feature importance, the background data used in the
+            explainer can be set through this parameter.
+
+        if fast_calc is True:
+
+        max_iter : int, default 500
+            Maximum number of iterations of the mask filter optimization, for
+            each instance.
+        l1_coeff : int, default 1
+            Weight given in the loss function to the L1 norm of the mask filter.
+        lr : float, default 0.001
+            Learning rate used in the optimization algorithm of the mask filter.
+        recur_layer : torch.nn.LSTM or torch.nn.GRU or torch.nn.RNN, default None
+            Pointer to the recurrent layer in the model, if it exists. It should
+            either be a LSTM, GRU or RNN network. If none is specified, the
+            method will automatically search for a recurrent layer in the model.
 
         Returns
         -------
@@ -365,22 +597,29 @@ class ModelInterpreter:
             # Use the predefined option if fast_calc isn't set in the function call
             fast_calc = self.fast_calc
 
+        # Sort the test data by sequence length
+        test_data, x_lengths_test = utils.sort_by_seq_len(test_data, self.seq_len_dict)
+
+        # Remove identifier columns from the test data
+        features_idx = list(range(test_data.shape[2]))
+        features_idx.remove(self.id_column)
+        features_idx.remove(self.inst_column)
+        test_data = test_data[:, :, features_idx]
+
+        # Make sure that the test data is in type float
+        test_data = test_data.float()
+
         if not fast_calc:
             print(f'Attention: you have chosen to interpret the model using SHAP, with {self.SHAP_bkgnd_samples} background samples applied to {test_data.shape[0]} test samples. This might take a while. Depending on your computer\'s processing power, you should do a coffee break or even go to sleep!')
 
             # Sort the background data by sequence length
             bkgnd_data, x_lengths_bkgnd = utils.sort_by_seq_len(bkgnd_data, self.seq_len_dict)
 
-            # Remove identifier columns from the data
-            features_idx = list(range(test_data.shape[2]))
-            features_idx.remove(self.id_column)
-            features_idx.remove(self.inst_column)
+            # Remove identifier columns from the background data
             bkgnd_data = bkgnd_data[:, :, features_idx]
-            test_data = test_data[:, :, features_idx]
 
-            # Make sure that the data is in type float
+            # Make sure that the background data is in type float
             bkgnd_data = bkgnd_data.float()
-            test_data = test_data.float()
 
             # Use the background dataset to integrate over
             self.explainer = shap.DeepExplainer(self.model, bkgnd_data, feedforward_args=[x_lengths_bkgnd])
@@ -390,16 +629,21 @@ class ModelInterpreter:
 
             # Explain the predictions of the sequences in the test set
             feat_scores = self.explainer.shap_values(test_data,
-                                                     feedforward_args=[x_lengths_bkgnd, x_lengths],
+                                                     feedforward_args=[x_lengths_bkgnd, x_lengths_test],
                                                      var_seq_len=True, see_progress=True)
             print(f'Calculation of SHAP values took {time.time() - start_time} seconds')
             return feat_scores
 
-        # else:
-            # [TODO] Apply mask filter
-            # return feat_scores
+        else:
+            # Count the time that takes to calculate the SHAP values
+            start_time = time.time()
 
-        return
+            # Apply mask filter
+            feat_scores = self.mask_filter(test_data, x_lengths_test, max_iter,
+                                           l1_coeff, lr, recur_layer)
+            print(f'Calculation of mask filter values took {time.time() - start_time} seconds')
+
+            return feat_scores
 
     # [Bonus TODO] Upload model explainer and interpretability plots to Comet.ml
     def interpret_model(self, bkgnd_data=None, test_data=None, test_labels=None, new_data=False,
@@ -468,6 +712,9 @@ class ModelInterpreter:
             instance, in the given input sequences. Only calculated if
             feature_importance is set to True.
         '''
+        # Confirm that the model is in evaluation mode to deactivate dropout
+        self.model.eval()
+
         if fast_calc is None:
             # Use the predefined option if fast_calc isn't set in the function call
             fast_calc = self.fast_calc
@@ -516,7 +763,7 @@ class ModelInterpreter:
         if feature_importance:
             print('Calculating feature importance scores...')
             # Calculate the scores of importance of each feature in each instance
-            self.feat_scores = self.feature_importance(bkgnd_data, test_data, x_lengths_test, fast_calc, see_progress)
+            self.feat_scores = self.feature_importance(test_data, fast_calc, see_progress, bkgnd_data)
 
         print('Done!')
 

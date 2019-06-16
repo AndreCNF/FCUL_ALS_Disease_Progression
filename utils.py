@@ -12,6 +12,7 @@ import numbers                                          # numbers allows to chec
 from NeuralNetwork import NeuralNetwork                 # Import the neural network model class
 from sklearn.metrics import roc_auc_score               # ROC AUC model performance metric
 import warnings                                         # Print warnings for bad practices
+import sys                                              # Identify types of exceptions
 
 # Random seed used in PyTorch and NumPy's random operations (such as weight initialization)
 random_seed = 0
@@ -274,10 +275,10 @@ def dataframe_to_padded_tensor(df, seq_len_dict, n_ids, n_inputs, id_column='sub
         to the requested data type.
     seq_len_dict : dictionary
         Dictionary containing the original sequence lengths of the dataframe.
-    n_ids : integer
+    n_ids : int
         Total number of subject identifiers in a dataframe.
         Example: Total number of patients in a health dataset.
-    n_inputs : integer
+    n_inputs : int
         Total number of input features present in the dataframe.
     id_column : string, default 'subject_id'
         Name of the column which corresponds to the subject identifier in the
@@ -575,14 +576,14 @@ def create_train_sets(dataset, test_train_ratio=0.2, validation_ratio=0.1, batch
         Number from 0 to 1 which indicates the percentage of the data
         from the training set which is used for validation purposes.
         A value of 0.0 corresponds to not using validation.
-    batch_size : integer, default 32
+    batch_size : int, default 32
         Defines the batch size, i.e. the number of samples used in each
         training iteration to update the model's weights.
     get_indeces : bool, default True
         If set to True, the function returns the dataloader objects of
         the train, validation and test sets and also the indices of the
         sets' data. Otherwise, it only returns the data loaders.
-    random_seed : integer, default 42
+    random_seed : int, default 42
         Seed used when shuffling the data.
     shuffle_dataset : bool, default True
         If set to True, the data of which set is shuffled.
@@ -717,7 +718,11 @@ def sort_by_seq_len(data, seq_len_dict, labels=None, id_column=0):
 
 def in_ipynb():
     '''Detect if code is running in a IPython notebook, such as in Jupyter Lab.'''
-    return str(type(get_ipython())) == "<class 'ipykernel.zmqshell.ZMQInteractiveShell'>"
+    try:
+        return str(type(get_ipython())) == "<class 'ipykernel.zmqshell.ZMQInteractiveShell'>"
+    except:
+        # Not on IPython if get_ipython fails
+        return False
 
 
 def pad_list(x_list, length, padding_value=999999):
@@ -777,20 +782,26 @@ def set_bar_color(values, ids, seq_len, threshold=0,
         return [pos_color if val > 0 else neg_color for val in values[ids, :seq_len]]
 
 
-def configure_plotly_browser_state():
-    '''Function used to allow plotly charts to appear in notebooks.'''
-    import IPython
-    display(IPython.core.display.HTML('''
-        <script src="/static/components/requirejs/require.js"></script>
-        <script>
-          requirejs.config({
-            paths: {
-              base: '/static/base',
-              plotly: 'https://cdn.plot.ly/plotly-latest.min.js?noext',
-            },
-          });
-        </script>
-        '''))
+def find_subject_idx(data, subject_id, subject_id_col=0):
+    '''Find the index that corresponds to a given subject in a data tensor.
+
+    Parameters
+    ----------
+    data : torch.Tensor
+        PyTorch tensor containing the data on which the subject's index will be
+        searched for.
+    subject_id : int or string
+        Unique identifier of the subject whose index on the data tensor one
+        wants to find out.
+    subject_id_col : int, default 0
+        The number of the column in the data tensor that stores the subject
+        identifiers.
+
+    Returns
+    -------
+    idx : int
+        Index where the specified subject appears in the data tensor.'''
+    return (data[:, 0, subject_id_col] == subject_id).nonzero().item()
 
 
 def model_inference(model, seq_len_dict, dataloader=None, data=None, metrics=['loss', 'accuracy', 'AUC'],
@@ -1048,7 +1059,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
           padding_value=999999, do_test=True, log_comet_ml=False,
           comet_ml_api_key=None, comet_ml_project_name=None,
           comet_ml_workspace=None, comet_ml_save_model=False, experiment=None,
-          features_list=None, get_val_loss_min=False, optim_score=None):
+          features_list=None, get_val_loss_min=False):
     '''Trains a given model on the provided data.
 
     Parameters
@@ -1069,10 +1080,10 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
         Dictionary containing the sequence lengths for each index of the
         original dataframe. This allows to ignore the padding done in
         the fixed sequence length tensor.
-   batch_size : integer, default 32
+   batch_size : int, default 32
         Defines the batch size, i.e. the number of samples used in each
         training iteration to update the model's weights.
-    n_epochs : integer, default 50
+    n_epochs : int, default 50
         Number of epochs, i.e. the number of times the training loop
         iterates through all of the training data.
     lr : float, default 0.001
@@ -1114,10 +1125,6 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
     get_val_loss_min : bool, default False
         If set to True, besides returning the trained model, the method also
         returns the minimum validation loss found during training.
-    optim_score : float, default None
-        If specified, it indicates which is the current minimum score which is
-        used as a criteria to choose the best model. It's useful for parameter
-        optimizations so that the optimizer learns which are the best parameters.
 
     Returns
     -------
@@ -1151,11 +1158,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
     step = 0                                                                # Number of iteration steps done so far
     print_every = 10                                                        # Steps interval where the metrics are printed
     train_on_gpu = torch.cuda.is_available()                                # Check if GPU is available
-
-    if optim_score is not None:
-        val_loss_min = optim_score                                          # Use the parameter optimizer's current best score
-    else:
-        val_loss_min = np.inf                                               # Start with an infinitely big minimum validation loss
+    val_loss_min = np.inf                                                   # Start with an infinitely big minimum validation loss
 
     for epoch in range(1, n_epochs+1):
         # Initialize the training metrics
@@ -1215,7 +1218,6 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                         labels = torch.nn.utils.rnn.pack_padded_sequence(labels, x_lengths, batch_first=True)
                         labels, _ = torch.nn.utils.rnn.pad_packed_sequence(labels, batch_first=True, padding_value=padding_value)
 
-                        # [TODO] Clip gradients to avoid exploding gradient
                         val_loss += model.loss(scores, labels, x_lengths)               # Calculate and add the validation loss of the current batch
                         mask = (labels <= 1).view_as(scores).float()                    # Create a mask by filtering out all labels that are not a padding value
                         unpadded_labels = torch.masked_select(labels.contiguous().view_as(scores), mask.byte()) # Completely remove the padded values from the labels using the mask
@@ -1285,12 +1287,17 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
         except:
             warnings.warn(f'There was a problem doing training epoch {epoch}. Ending training.')
 
-    if do_test and model_filename is not None:
-        # Load the model with the best validation performance
-        model = load_checkpoint(model_filename)
+    try:
+        if do_test and model_filename is not None:
+            # Load the model with the best validation performance
+            model = load_checkpoint(model_filename)
 
-        # Run inference on the test data
-        model_inference(model, seq_len_dict, dataloader=test_dataloader , experiment=experiment)
+            # Run inference on the test data
+            model_inference(model, seq_len_dict, dataloader=test_dataloader , experiment=experiment)
+    except UnboundLocalError:
+        warnings.warn('Inference failed due to non existent saved models. Skipping evaluation on test set.')
+    except:
+        warnings.warn(f'Inference failed due to {sys.exc_info()[0]}. Skipping evaluation on test set.')
 
     if log_comet_ml:
         # Only report that the experiment completed successfully if it finished the training without errors

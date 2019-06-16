@@ -128,6 +128,11 @@ for iter in range(max_optim_iter):
     if train_on_gpu:
         model = model.cuda()                        # Move the model to the GPU
 
+    # Set gradient clipping to avoid exploding gradients
+    clip_value = 10
+    for p in model.parameters():
+        p.register_hook(lambda grad: torch.clamp(grad, -clip_value, clip_value))
+
     print('Training the model...')
 
     # Train the model and get the minimum validation loss
@@ -139,8 +144,7 @@ for iter in range(max_optim_iter):
                                       comet_ml_save_model=args.comet_ml_save_model,
                                       experiment=experiment,
                                       features_list=list(ALS_df.columns).remove('niv_label'),
-                                      get_val_loss_min=True,
-                                      optim_score=val_loss_min)
+                                      get_val_loss_min=True)
 
     # Report the minimum validation loss achieved so that the parameter optimizer updates the score
     suggestion.report_score('val_loss_min', val_loss_min)
