@@ -135,7 +135,7 @@ seq_len_dict = dict([(idx, val[0]) for idx, val in list(zip(seq_len_df.index, se
 # +
 n_patients = ALS_df.subject_id.nunique()     # Total number of patients
 n_inputs = len(ALS_df.columns)               # Number of input features
-padding_value = np.nan                       # Value to be used in the padding
+padding_value = 0                            # Value to be used in the padding
 
 # Pad data (to have fixed sequence length) and convert into a PyTorch tensor
 data = utils.dataframe_to_padded_tensor(ALS_df, seq_len_dict, n_patients, n_inputs, padding_value=padding_value)
@@ -292,13 +292,17 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 # Using my custom class for model interpretability through instance and feature importance.
 
 # + {"pixiedust": {"displayParams": {}}}
-interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=False, SHAP_bkgnd_samples=200, padding_value=np.nan)
+interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=True, SHAP_bkgnd_samples=200, padding_value=0)
 
 # + {"pixiedust": {"displayParams": {}}}
+# %%pixie_debugger
 # Number of patients to analyse
 n_patients = 50
 
 _ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=False, feature_importance=True)
+# -
+
+interpreter.feat_scores
 
 # +
 # Get the current day and time to attach to the saved model's name

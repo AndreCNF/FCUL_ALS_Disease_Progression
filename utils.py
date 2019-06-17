@@ -725,6 +725,20 @@ def in_ipynb():
         return False
 
 
+def iterations_loop(x, see_progress=True):
+    '''Determine if a progress bar is shown or not.'''
+    if see_progress:
+        # Define the method to use as a progress bar, depending on whether code
+        # is running on a notebook or terminal
+        if in_ipynb():
+            return tqdm_notebook(x)
+        else:
+            return tqdm(x)
+    else:
+        # Don't show any progress bar if see_progress is False
+        return x
+
+
 def pad_list(x_list, length, padding_value=999999):
     '''Pad a list with a specific padding value until the desired length is
     met.
@@ -802,6 +816,43 @@ def find_subject_idx(data, subject_id, subject_id_col=0):
     idx : int
         Index where the specified subject appears in the data tensor.'''
     return (data[:, 0, subject_id_col] == subject_id).nonzero().item()
+
+
+def change_grad(grad, data, min=0, max=1):
+    '''Restrict the gradients to only have valid values.
+
+    Parameters
+    ----------
+    grad : torch.Tensor
+        PyTorch tensor containing the gradients of the data being optimized.
+    data : torch.Tensor
+        PyTorch tensor containing the data being optimized.
+    min : int, default 0
+        Minimum valid data value.
+    max : int, default 0
+        Maximum valid data value.
+
+    Returns
+    -------
+    grad : torch.Tensor
+        PyTorch tensor containing the corrected gradients of the data being
+        optimized.
+    '''
+    for i in range(data.shape[0]):
+        if (data[i] == min and grad[i] < 0) or (data[i] == max and grad[i] > 0):
+            # Stop the gradient from excedding the limit
+            grad[i] = 0
+        elif data[i] == min and grad[i] > 0.001:
+            # Make the gradient have a integer value
+            grad[i] = 1
+        elif data[i] == max and grad[i] < -0.001:
+            # Make the gradient have a integer value
+            grad[i] = -1
+        else:
+            # Avoid any insignificant gradient
+            grad[i] = 0
+
+    return grad
 
 
 def model_inference(model, seq_len_dict, dataloader=None, data=None, metrics=['loss', 'accuracy', 'AUC'],
