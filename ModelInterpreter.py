@@ -219,7 +219,8 @@ class ModelInterpreter:
         seq_len_dict = dict([(idx, val[0]) for idx, val in list(zip(seq_len_df.index, seq_len_df.values))])
         return seq_len_dict
 
-    def mask_filter_step(self, mask, data, l1_coeff=1, hidden_state=None):
+    def mask_filter_step(self, mask, data, l1_coeff=1, hidden_state=None,
+                         debug_loss=False):
         '''Perform a single optimization step to calculate a new version of the
         mask filter.
 
@@ -237,11 +238,19 @@ class ModelInterpreter:
         hidden_state : torch.Tensor or tuple of two torch.Tensor, default None
             Hidden state coming from the previous recurrent cell. If none is
             specified, the hidden state is initialized as zero.
+        debug_loss : bool, default False
+            Debugging flag, which makes the method also return an array of the
+            optimization loss.
 
         Returns
         -------
         mask : numpy.Array
             Current mask filter, after the performed optimization step.
+
+        if debug_loss is True:
+
+        loss : float
+            Current loss value of the mask filter optimization.
         '''
         # Get the model's output for the input data
         output = self.model((mask * data).unsqueeze(0).unsqueeze(0), hidden_state=hidden_state)
@@ -250,7 +259,7 @@ class ModelInterpreter:
         loss = l1_coeff * torch.mean(torch.abs(1 - mask)) + output
 
         # Backpropagate the loss function and run an optimization step (update the mask filter)
-        loss.backward(retain_graph=True)
+        loss.backward()
         mask.grad = utils.change_grad((-1) * mask.grad, mask.data)
         mask.data = mask.data + mask.grad
 
@@ -258,11 +267,14 @@ class ModelInterpreter:
         mask.data.clamp_(0, 1)
         mask.data.round_()
 
-        return mask
+        if debug_loss:
+            return mask, loss
+        else:
+            return mask
 
     # [TODO] Confirm that the mask filter is working in every scenario
     def mask_filter(self, data=None, x_lengths=None, max_iter=100, l1_coeff=1,
-                    lr=0.001, recur_layer=None, see_progress=True):
+                    lr=0.001, recur_layer=None, see_progress=True, debug_loss=False):
         '''Calculate a mask filter for the given data samples, through an
         appropriate optimization.
 
@@ -289,6 +301,9 @@ class ModelInterpreter:
         see_progress : bool, default True
             If set to True, a progress bar will show up indicating the execution
             of the feature importance scores calculations.
+        debug_loss : bool, default False
+            Debugging flag, which makes the method also return an array of the
+            optimization loss.
 
         Returns
         -------
@@ -297,6 +312,11 @@ class ModelInterpreter:
             sample. It will be inverted before returning, so as to be an array
             filled with zeros, except in the indeces corresponding to the most
             relevant features, where it will be one.
+
+        if debug_loss is True:
+
+        loss : np.Array
+            Matrix containing the loss values of the mask filter optimization.
         '''
         # [TODO] Work on an option to use input data different from multivariate sequential
 
@@ -325,6 +345,9 @@ class ModelInterpreter:
         # Create a mask filter variable, initialized as an all ones tensor
         mask = torch.ones(data.shape)
 
+        # [DEBUG] Create a loss matrix to analyse the convergence of mask filter optimizations
+        loss_mtx = []
+
         if len(data.shape) == 3:
             # Loop to go through each sequence in the input data
             for seq in utils.iterations_loop(range(data.shape[0]), see_progress=see_progress):
@@ -338,17 +361,29 @@ class ModelInterpreter:
                     if inst > 0:
                         # Get the hidden state outputed from the previous recurrent cell
                         _, hidden_state = recur_layer(data[:inst])
+                        # Avoid backpropagating through previous instances
+                        if type(hidden_state) is tuple:
+                            hidden_state = (hidden_state[0].detach(), hidden_state[1].detach())
+                        else:
+                            hidden_state.detach_()
 
                     # Temporary mask filter for he current instance
                     tmp_mask = Variable(mask[seq, inst, :], requires_grad=True)
 
+                    # [DEBUG] List of the current optimization's losses
+                    tmp_loss_list = []
+
                     # Mask filter optimization loop
                     for iter in utils.iterations_loop(range(max_iter), see_progress=see_progress):
                         # Perform a single optimization step
-                        tmp_mask = self.mask_filter_step(tmp_mask, data[seq, inst, :], l1_coeff, hidden_state)
+                        tmp_mask, tmp_loss = self.mask_filter_step(tmp_mask, data[seq, inst, :], l1_coeff, hidden_state, debug_loss=True)
+                        tmp_loss_list.append(tmp_loss)
 
                     # Save the optimized mask filter of the current instance
                     mask[seq, inst, :] = tmp_mask
+
+                    # [DEBUG] Add the current instance's optimization logs to the overall loss matrix
+                    loss_mtx.append(tmp_loss_list)
 
         elif len(data.shape) == 2:
             # Loop to go through each instance in the input sequence
@@ -358,6 +393,11 @@ class ModelInterpreter:
                 if inst > 0:
                     # Get the hidden state outputed from the previous recurrent cell
                     _, hidden_state = recur_layer(data[:inst])
+                    # Avoid backpropagating through previous instances
+                    if type(hidden_state) is tuple:
+                        hidden_state = (hidden_state[0].detach(), hidden_state[1].detach())
+                    else:
+                        hidden_state.detach_()
 
                 # Temporary mask filter for he current instance
                 tmp_mask = Variable(mask[inst], requires_grad=True)
@@ -384,7 +424,10 @@ class ModelInterpreter:
                               Submitted data with {len(data.shape)} dimensions.')
 
         # Return the inverted version of the mask, to atrribute 1 (one) to the most relevant features
-        return 1 - mask
+        if debug_loss:
+            return 1 - mask, loss_mtx
+        else:
+            return 1 - mask
 
     def instance_importance(self, data=None, labels=None, x_lengths=None,
                             see_progress=True, occlusion_wgt=None):

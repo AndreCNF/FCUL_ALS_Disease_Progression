@@ -297,12 +297,14 @@ interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=True, SHAP
 # + {"pixiedust": {"displayParams": {}}}
 # # %%pixie_debugger
 # Number of patients to analyse
-n_patients = 50
+n_patients = 1
 
-_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=False, feature_importance=True)
+_, loss_mtx = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=False, feature_importance=True)
 # -
 
-interpreter.feat_scores
+interpreter.feat_scores[0][5]
+
+[ALS_cols[idx] for idx in [t.item() for t in list((interpreter.feat_scores[0][5] == 1).nonzero())]]
 
 # +
 # Get the current day and time to attach to the saved model's name
@@ -431,6 +433,8 @@ layout = go.Layout(
                   )
 fig = go.Figure(data=data, layout=layout)
 py.iplot(fig, filename='basic-bar')
+
+patient = 0
 
 # +
 # True sequence length of the current patient's data
