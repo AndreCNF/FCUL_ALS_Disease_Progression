@@ -219,7 +219,7 @@ class ModelInterpreter:
         seq_len_dict = dict([(idx, val[0]) for idx, val in list(zip(seq_len_df.index, seq_len_df.values))])
         return seq_len_dict
 
-    def mask_filter_step(self, mask, optimizer, data, l1_coeff=0, hidden_state=None):
+    def mask_filter_step(self, mask, data, l1_coeff=1, hidden_state=None):
         '''Perform a single optimization step to calculate a new version of the
         mask filter.
 
@@ -228,8 +228,6 @@ class ModelInterpreter:
         mask : numpy.Array
             Current mask filter, either the initial one or from the previous
             optimization iteration.
-        optimizer : torch.optim
-            Optimizer used in the calculation of the mask filter.
         data : torch.Tensor
             Data sample which will be used to determine the most relevant
             features. In case of multivariate sequential data, this must be a
@@ -244,13 +242,7 @@ class ModelInterpreter:
         -------
         mask : numpy.Array
             Current mask filter, after the performed optimization step.
-        optimizer : torch.optim
-            Optimizer used in the calculation of the mask filter, updated with
-            the performed step.
         '''
-        # # Clear the gradients of all optimized variables
-        # optimizer.zero_grad()
-
         # Get the model's output for the input data
         output = self.model((mask * data).unsqueeze(0).unsqueeze(0), hidden_state=hidden_state)
 
@@ -258,19 +250,18 @@ class ModelInterpreter:
         loss = l1_coeff * torch.mean(torch.abs(1 - mask)) + output
 
         # Backpropagate the loss function and run an optimization step (update the mask filter)
-        loss.backward()
+        loss.backward(retain_graph=True)
         mask.grad = utils.change_grad((-1) * mask.grad, mask.data)
         mask.data = mask.data + mask.grad
-        # optimizer.step()
 
         # Make sure that the mask has values either 0 or 1
         mask.data.clamp_(0, 1)
         mask.data.round_()
 
-        return mask, optimizer
+        return mask
 
     # [TODO] Confirm that the mask filter is working in every scenario
-    def mask_filter(self, data=None, x_lengths=None, max_iter=500, l1_coeff=0,
+    def mask_filter(self, data=None, x_lengths=None, max_iter=100, l1_coeff=1,
                     lr=0.001, recur_layer=None, see_progress=True):
         '''Calculate a mask filter for the given data samples, through an
         appropriate optimization.
@@ -284,7 +275,7 @@ class ModelInterpreter:
             interpreter will be used.
         x_lengths : list of int
             Sorted list of sequence lengths, relative to the input data.
-        max_iter : int, default 500
+        max_iter : int, default 100
             Maximum number of iterations of the mask filter optimization, for
             each instance.
         l1_coeff : int, default 1
@@ -346,18 +337,15 @@ class ModelInterpreter:
                     # Get the hidden state that the model receives as an input
                     if inst > 0:
                         # Get the hidden state outputed from the previous recurrent cell
-                        _, hidden_state = recur_layer(data[:inst-1])
+                        _, hidden_state = recur_layer(data[:inst])
 
                     # Temporary mask filter for he current instance
                     tmp_mask = Variable(mask[seq, inst, :], requires_grad=True)
 
-                    # # Instantiate an optimizer that will calculate the optimal mask filter for the current instance
-                    # optimizer = torch.optim.Adam([tmp_mask], lr=lr)
-
                     # Mask filter optimization loop
                     for iter in utils.iterations_loop(range(max_iter), see_progress=see_progress):
                         # Perform a single optimization step
-                        tmp_mask, optimizer = self.mask_filter_step(tmp_mask, optimizer, data[seq, inst, :], l1_coeff, hidden_state)
+                        tmp_mask = self.mask_filter_step(tmp_mask, data[seq, inst, :], l1_coeff, hidden_state)
 
                     # Save the optimized mask filter of the current instance
                     mask[seq, inst, :] = tmp_mask
@@ -369,18 +357,15 @@ class ModelInterpreter:
                 # Get the hidden state that the model receives as an input
                 if inst > 0:
                     # Get the hidden state outputed from the previous recurrent cell
-                    _, hidden_state = recur_layer(data[:inst-1])
+                    _, hidden_state = recur_layer(data[:inst])
 
                 # Temporary mask filter for he current instance
                 tmp_mask = Variable(mask[inst], requires_grad=True)
 
-                # # Instantiate an optimizer that will calculate the optimal mask filter for the current instance
-                # optimizer = torch.optim.Adam([tmp_mask.requires_grad_()], lr=lr)
-
                 # Mask filter optimization loop
                 for iter in utils.iterations_loop(range(max_iter), see_progress=see_progress):
                     # Perform a single optimization step
-                    tmp_mask, optimizer = self.mask_filter_step(tmp_mask, optimizer, data[inst], l1_coeff, hidden_state)
+                    tmp_mask = self.mask_filter_step(tmp_mask, data[inst], l1_coeff, hidden_state)
 
                 # Save the optimized mask filter of the current instance
                 mask[inst] = tmp_mask
@@ -389,13 +374,10 @@ class ModelInterpreter:
             # Make sure that the mask can be optimized properly
             mask.requires_grad_()
 
-            # # Instantiate an optimizer that will calculate the optimal mask filter
-            # optimizer = torch.optim.Adam([mask], lr=lr)
-
             # Mask filter optimization loop
             for iter in utils.iterations_loop(range(max_iter), see_progress=see_progress):
                 # Perform a single optimization step
-                mask, optimizer = self.mask_filter_step(mask, optimizer, data, l1_coeff)
+                mask = self.mask_filter_step(mask, data, l1_coeff)
 
         else:
             raise Exception(f'ERROR: Can\'t handle data with more than 3 dimensions. \
@@ -556,7 +538,7 @@ class ModelInterpreter:
         return inst_scores
 
     def feature_importance(self, test_data=None, fast_calc=None,
-                           see_progress=True, bkgnd_data=None, max_iter=500,
+                           see_progress=True, bkgnd_data=None, max_iter=100,
                            l1_coeff=0, lr=0.001, recur_layer=None):
         '''Calculate the feature importance scores to interpret the impact
         of each feature in each instance's output.
@@ -586,7 +568,7 @@ class ModelInterpreter:
 
         if fast_calc is True:
 
-        max_iter : int, default 500
+        max_iter : int, default 100
             Maximum number of iterations of the mask filter optimization, for
             each instance.
         l1_coeff : int, default 1

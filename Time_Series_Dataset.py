@@ -2,7 +2,7 @@ from torch.utils.data import Dataset
 
 class Time_Series_Dataset(Dataset):
     def __init__(self, arr, df, label_name=None):
-        # Counter that indicates in which column where in when searching for the label column
+        # Counter that indicates in which column we're in when searching for the label column
         col_num = 0
         for col in df.columns:
             if 'label' in col or col == label_name:

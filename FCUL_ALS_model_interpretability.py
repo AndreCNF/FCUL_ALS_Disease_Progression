@@ -206,7 +206,7 @@ test_features, test_labels, x_lengths_test = utils.sort_by_seq_len(test_features
 test_features[0, 0]
 
 # Denormalize the feature values so that the plots are easier to understand
-test_features_denorm = utils.denormalize_data(orig_ALS_df, test_features)
+test_features_denorm = utils.denormalize_data(orig_ALS_df, test_features, see_progress=False)
 
 test_features[0, 0]
 
@@ -295,7 +295,7 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=True, SHAP_bkgnd_samples=200, padding_value=0)
 
 # + {"pixiedust": {"displayParams": {}}}
-# %%pixie_debugger
+# # %%pixie_debugger
 # Number of patients to analyse
 n_patients = 50
 

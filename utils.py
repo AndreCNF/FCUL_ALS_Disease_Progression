@@ -31,7 +31,8 @@ class ColumnNotFoundError(Exception):
 # Auxiliary functions
 
 def dataframe_missing_values(df, column=None):
-    '''Returns a dataframe with the percentages of missing values of every column of the original dataframe.
+    '''Returns a dataframe with the percentages of missing values of every column
+    of the original dataframe.
 
     Parameters
     ----------
@@ -53,7 +54,7 @@ def dataframe_missing_values(df, column=None):
         columns = df.columns
         percent_missing = df.isnull().sum() * 100 / len(df)
         missing_value_df = pd.DataFrame({'column_name': columns,
-                                       'percent_missing': percent_missing})
+                                         'percent_missing': percent_missing})
         missing_value_df.sort_values('percent_missing', inplace=True)
         return missing_value_df
     else:
@@ -327,7 +328,8 @@ def dataframe_to_padded_tensor(df, seq_len_dict, n_ids, n_inputs, id_column='sub
         raise Exception('ERROR: Unavailable data type. Please choose either NumPy or PyTorch.')
 
 
-def normalize_data(df, data=None, id_columns=['subject_id', 'ts'], normalization_method='z-score', columns_to_normalize=None):
+def normalize_data(df, data=None, id_columns=['subject_id', 'ts'], normalization_method='z-score',
+                   columns_to_normalize=None, see_progress=True):
     '''Performs data normalization to a continuous valued tensor or dataframe,
        changing the scale of the data.
 
@@ -356,8 +358,10 @@ def normalize_data(df, data=None, id_columns=['subject_id', 'ts'], normalization
         maximum value, getting to a fixed range from 0 to 1.
     columns_to_normalize : list of strings, default None
         If specified, the columns provided in the list are the only ones that
-        will be normalized. Otherwise, all non identifier continuous columns
-        will be normalized.
+        will be normalized. Otherwise, all continuous columns will be normalized.
+    see_progress : bool, default True
+        If set to True, a progress bar will show up indicating the execution
+        of the normalization calculations.
 
     Returns
     -------
@@ -366,8 +370,11 @@ def normalize_data(df, data=None, id_columns=['subject_id', 'ts'], normalization
     '''
     # Check if specific columns have been specified for normalization
     if columns_to_normalize is None:
+        # List of binary or one hot encoded columns
+        binary_cols = list_one_hot_encoded_columns(df)
+
         # Normalize all non identifier continuous columns, ignore one hot encoded ones
-        columns_to_normalize = [col for col in df.columns if col not in list_one_hot_encoded_columns(df) and col not in id_columns]
+        columns_to_normalize = [col for col in df.columns if col not in binary_cols and col not in id_columns]
 
     if type(normalization_method) is not str:
         raise ValueError('Argument normalization_method should be a string. Available options \
@@ -383,7 +390,7 @@ def normalize_data(df, data=None, id_columns=['subject_id', 'ts'], normalization
             data = df
 
             # Normalize the right columns
-            for col in columns_to_normalize:
+            for col in iterations_loop(columns_to_normalize, see_progress=see_progress):
                 data[col] = (data[col] - column_means[col]) / column_stds[col]
 
         # Otherwise, the tensor is normalized
@@ -398,7 +405,7 @@ def normalize_data(df, data=None, id_columns=['subject_id', 'ts'], normalization
             tensor_columns_to_normalize = [name_to_idx[name] for name in columns_to_normalize]
 
             # Normalize the right columns
-            for col in tensor_columns_to_normalize:
+            for col in iterations_loop(tensor_columns_to_normalize, see_progress=see_progress):
                 data[:, :, col] = (data[:, :, col] - column_means[idx_to_name[col]]) / column_stds[idx_to_name[col]]
 
     elif normalization_method.lower() == 'min-max':
@@ -411,7 +418,7 @@ def normalize_data(df, data=None, id_columns=['subject_id', 'ts'], normalization
             data = df
 
             # Normalize the right columns
-            for col in columns_to_normalize:
+            for col in iterations_loop(columns_to_normalize, see_progress=see_progress):
                 data[col] = (data[col] - column_mins[col]) / (column_maxs[col] - column_mins[col])
 
         # Otherwise, the tensor is normalized
@@ -426,7 +433,7 @@ def normalize_data(df, data=None, id_columns=['subject_id', 'ts'], normalization
             tensor_columns_to_normalize = [name_to_idx[name] for name in columns_to_normalize]
 
             # Normalize the right columns
-            for col in tensor_columns_to_normalize:
+            for col in iterations_loop(tensor_columns_to_normalize, see_progress=see_progress):
                 data[:, :, col] = (data[:, :, col] - column_mins[idx_to_name[col]]) / \
                                   (column_maxs[idx_to_name[col]] - column_mins[idx_to_name[col]])
 
@@ -437,7 +444,8 @@ def normalize_data(df, data=None, id_columns=['subject_id', 'ts'], normalization
     return data
 
 
-def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_method='z-score', columns_to_denormalize=None):
+def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_method='z-score',
+                     columns_to_denormalize=None, see_progress=True):
     '''Performs data denormalization to a continuous valued tensor or dataframe,
        changing the scale of the data.
 
@@ -452,7 +460,7 @@ def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_me
         be denormalized by the specified normalization method.
     id_columns : list of strings, default ['subject_id', 'ts']
         List of columns names which represent identifier columns. These are not
-        supposed to be normalized.
+        supposed to be denormalized.
     normalization_method : string, default 'z-score'
         Specifies the normalization method used. It can be a z-score
         normalization, where the data is subtracted of it's mean and divided
@@ -465,6 +473,9 @@ def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_me
         If specified, the columns provided in the list are the only ones that
         will be denormalized. Otherwise, all non identifier continuous columns
         will be denormalized.
+    see_progress : bool, default True
+        If set to True, a progress bar will show up indicating the execution
+        of the normalization calculations.
 
     Returns
     -------
@@ -476,8 +487,11 @@ def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_me
 
     # Check if specific columns have been specified for denormalization
     if columns_to_denormalize is None:
+        # List of binary or one hot encoded columns
+        binary_cols = list_one_hot_encoded_columns(df)
+
         # Denormalize all non identifier continuous columns, ignore one hot encoded ones
-        columns_to_denormalize = [col for col in df.columns if col not in list_one_hot_encoded_columns(df) and col not in id_columns]
+        columns_to_denormalize = [col for col in df.columns if col not in binary_cols and col not in id_columns]
 
     if type(normalization_method) is not str:
         raise ValueError('Argument normalization_method should be a string. Available options \
@@ -490,7 +504,7 @@ def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_me
         # Check if the data being denormalized is a dataframe
         if type(data) is pd.DataFrame:
             # Denormalize the right columns
-            for col in columns_to_denormalize:
+            for col in iterations_loop(columns_to_denormalize, see_progress=see_progress):
                 denorm_data[col] = data[col] * column_stds[col] + column_means[col]
 
         # Otherwise, the tensor is denormalized
@@ -505,7 +519,7 @@ def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_me
             tensor_columns_to_denormalize = [name_to_idx[name] for name in columns_to_denormalize]
 
             # Denormalize the right columns
-            for col in tensor_columns_to_denormalize:
+            for col in iterations_loop(tensor_columns_to_denormalize, see_progress=see_progress):
                 denorm_data[:, :, col] = data[:, :, col] * column_stds[idx_to_name[col]] + column_means[idx_to_name[col]]
 
     elif normalization_method.lower() == 'min-max':
@@ -515,7 +529,7 @@ def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_me
         # Check if the data being normalized is directly the dataframe
         if type(data) is pd.DataFrame:
             # Denormalize the right columns
-            for col in columns_to_denormalize:
+            for col in iterations_loop(columns_to_denormalize, see_progress=see_progress):
                 denorm_data[col] = data[col] * (column_maxs[col] - column_mins[col]) + column_mins[col]
 
         # Otherwise, the tensor is denormalized
@@ -530,7 +544,7 @@ def denormalize_data(df, data, id_columns=['subject_id', 'ts'], normalization_me
             tensor_columns_to_denormalize = [name_to_idx[name] for name in columns_to_normalize]
 
             # Denormalize the right columns
-            for col in tensor_columns_to_normalize:
+            for col in iterations_loop(tensor_columns_to_denormalize, see_progress=see_progress):
                 denorm_data[:, :, col] = data[:, :, col] * (column_maxs[idx_to_name[col]] - column_mins[idx_to_name[col]]) \
                                          + column_mins[idx_to_name[col]]
 
@@ -560,8 +574,8 @@ def missing_values_imputation(tensor):
     return tensor
 
 
-def create_train_sets(dataset, test_train_ratio=0.2, validation_ratio=0.1, batch_size=32, get_indeces=True,
-                      random_seed=42, shuffle_dataset=True):
+def create_train_sets(dataset, test_train_ratio=0.2, validation_ratio=0.1, batch_size=32,
+                      get_indeces=True, random_seed=42, shuffle_dataset=True):
     '''Distributes the data into train, validation and test sets and returns the respective data loaders.
 
     Parameters
@@ -1131,7 +1145,7 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
         Dictionary containing the sequence lengths for each index of the
         original dataframe. This allows to ignore the padding done in
         the fixed sequence length tensor.
-   batch_size : int, default 32
+    batch_size : int, default 32
         Defines the batch size, i.e. the number of samples used in each
         training iteration to update the model's weights.
     n_epochs : int, default 50
