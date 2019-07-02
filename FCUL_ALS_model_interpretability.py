@@ -299,10 +299,16 @@ interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=True, SHAP
 # Number of patients to analyse
 n_patients = 1
 
-_, loss_mtx = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=False, feature_importance=True)
+_, loss_mtx = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=False, feature_importance=True, debug_loss=True)
 # -
 
+loss_mtx
+
 interpreter.feat_scores[0][5]
+
+torch.max(interpreter.feat_scores)
+
+
 
 [ALS_cols[idx] for idx in [t.item() for t in list((interpreter.feat_scores[0][5] == 1).nonzero())]]
 

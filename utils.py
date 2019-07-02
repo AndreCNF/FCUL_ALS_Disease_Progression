@@ -387,7 +387,7 @@ def normalize_data(df, data=None, id_columns=['subject_id', 'ts'], normalization
         # Check if the data being normalized is directly the dataframe
         if data is None:
             # Treat the dataframe as the data being normalized
-            data = df
+            data = df.copy()
 
             # Normalize the right columns
             for col in iterations_loop(columns_to_normalize, see_progress=see_progress):
@@ -415,7 +415,7 @@ def normalize_data(df, data=None, id_columns=['subject_id', 'ts'], normalization
         # Check if the data being normalized is directly the dataframe
         if data is None:
             # Treat the dataframe as the data being normalized
-            data = df
+            data = df.copy()
 
             # Normalize the right columns
             for col in iterations_loop(columns_to_normalize, see_progress=see_progress):
@@ -852,14 +852,17 @@ def change_grad(grad, data, min=0, max=1):
         PyTorch tensor containing the corrected gradients of the data being
         optimized.
     '''
+    # Minimum accepted gradient value to be considered
+    min_grad_val = 0.001
+
     for i in range(data.shape[0]):
         if (data[i] == min and grad[i] < 0) or (data[i] == max and grad[i] > 0):
             # Stop the gradient from excedding the limit
             grad[i] = 0
-        elif data[i] == min and grad[i] > 0.001:
+        elif data[i] == min and grad[i] > min_grad_val:
             # Make the gradient have a integer value
             grad[i] = 1
-        elif data[i] == max and grad[i] < -0.001:
+        elif data[i] == max and grad[i] < -min_grad_val:
             # Make the gradient have a integer value
             grad[i] = -1
         else:
@@ -977,12 +980,11 @@ def model_inference(model, seq_len_dict, dataloader=None, data=None, metrics=['l
             output = unpadded_scores
 
         if seq_final_outputs:
-            # Only get the outputs retrieved at the sequences' end
-            # Cumulative sequence lengths
-            x_lengths_cumsum = np.cumsum(x_lengths)
+            # Indeces at the end of each sequence
+            final_seq_idx = [n_subject*features.shape[1]+x_lengths[n_subject]-1 for n_subject in range(features.shape[0])]
 
             # Get the outputs of the last instances of each sequence
-            output = output[x_lengths_cumsum-1]
+            output = output[final_seq_idx]
 
         if any(mtrc in metrics for mtrc in ['precision', 'recall', 'F1']):
             # Calculate the number of true positives, false negatives, true negatives and false positives
@@ -1049,12 +1051,11 @@ def model_inference(model, seq_len_dict, dataloader=None, data=None, metrics=['l
                 output = torch.cat([output.float(), unpadded_scores])
 
             if seq_final_outputs:
-                # Only get the outputs retrieved at the sequences' end
-                # Cumulative sequence lengths
-                x_lengths_cumsum = np.cumsum(x_lengths)
+                # Indeces at the end of each sequence
+                final_seq_idx = [n_subject*features.shape[1]+x_lengths[n_subject]-1 for n_subject in range(features.shape[0])]
 
                 # Get the outputs of the last instances of each sequence
-                output = output[x_lengths_cumsum-1]
+                output = output[final_seq_idx]
 
             if any(mtrc in metrics for mtrc in ['precision', 'recall', 'F1']):
                 # Calculate the number of true positives, false negatives, true negatives and false positives

@@ -219,8 +219,8 @@ class ModelInterpreter:
         seq_len_dict = dict([(idx, val[0]) for idx, val in list(zip(seq_len_df.index, seq_len_df.values))])
         return seq_len_dict
 
-    def mask_filter_step(self, mask, data, l1_coeff=1, hidden_state=None,
-                         debug_loss=False):
+    def mask_filter_step(self, mask, data, ref_output, l1_coeff=1,
+                         hidden_state=None, debug_loss=False):
         '''Perform a single optimization step to calculate a new version of the
         mask filter.
 
@@ -233,6 +233,8 @@ class ModelInterpreter:
             Data sample which will be used to determine the most relevant
             features. In case of multivariate sequential data, this must be a
             single instance of a sequence.
+        ref_output : torch.Tensor or float
+            Model's output to the original instance, with no mask filters applied.
         l1_coeff : int, default 1
             Weight given in the loss function to the L1 norm of the mask filter.
         hidden_state : torch.Tensor or tuple of two torch.Tensor, default None
@@ -252,14 +254,16 @@ class ModelInterpreter:
         loss : float
             Current loss value of the mask filter optimization.
         '''
-        # Get the model's output for the input data
-        output = self.model((mask * data).unsqueeze(0).unsqueeze(0), hidden_state=hidden_state)
+        # Get the model's output for the masked input data
+        new_output = self.model((mask * data).unsqueeze(0).unsqueeze(0), hidden_state=hidden_state)
 
         # Calculate the loss function
-        loss = l1_coeff * torch.mean(torch.abs(1 - mask)) + output
+        # • Minimize the number of activated mask filter units (occluded features)
+        # • Maximize the change made to the output
+        loss = l1_coeff * torch.mean(torch.abs(1 - mask)) + 1 - (ref_output - new_output).pow(2)
 
         # Backpropagate the loss function and run an optimization step (update the mask filter)
-        loss.backward()
+        loss.backward(retain_graph=True)
         mask.grad = utils.change_grad((-1) * mask.grad, mask.data)
         mask.data = mask.data + mask.grad
 
@@ -268,7 +272,7 @@ class ModelInterpreter:
         mask.data.round_()
 
         if debug_loss:
-            return mask, loss
+            return mask, loss.item()
         else:
             return mask
 
@@ -315,7 +319,7 @@ class ModelInterpreter:
 
         if debug_loss is True:
 
-        loss : np.Array
+        loss_mtx : np.Array
             Matrix containing the loss values of the mask filter optimization.
         '''
         # [TODO] Work on an option to use input data different from multivariate sequential
@@ -375,8 +379,12 @@ class ModelInterpreter:
 
                     # Mask filter optimization loop
                     for iter in utils.iterations_loop(range(max_iter), see_progress=see_progress):
+                        # Calculate the model's output to the original, unchanged instance data
+                        ref_output = self.model(data[seq, inst, :].unsqueeze(0).unsqueeze(0), hidden_state=hidden_state)
+                        # Prevent mask filter optimization from backpropagating through the reference output
+                        ref_output.detach_()
                         # Perform a single optimization step
-                        tmp_mask, tmp_loss = self.mask_filter_step(tmp_mask, data[seq, inst, :], l1_coeff, hidden_state, debug_loss=True)
+                        tmp_mask, tmp_loss = self.mask_filter_step(tmp_mask, data[seq, inst, :], ref_output, l1_coeff, hidden_state, debug_loss=debug_loss)
                         tmp_loss_list.append(tmp_loss)
 
                     # Save the optimized mask filter of the current instance
@@ -404,8 +412,12 @@ class ModelInterpreter:
 
                 # Mask filter optimization loop
                 for iter in utils.iterations_loop(range(max_iter), see_progress=see_progress):
+                    # Calculate the model's output to the original, unchanged instance data
+                    ref_output = self.model(data[inst].unsqueeze(0).unsqueeze(0), hidden_state=hidden_state)
+                    # Prevent mask filter optimization from backpropagating through the reference output
+                    ref_output.detach_()
                     # Perform a single optimization step
-                    tmp_mask = self.mask_filter_step(tmp_mask, data[inst], l1_coeff, hidden_state)
+                    tmp_mask = self.mask_filter_step(tmp_mask, data[inst], ref_output, l1_coeff, hidden_state)
 
                 # Save the optimized mask filter of the current instance
                 mask[inst] = tmp_mask
@@ -416,8 +428,12 @@ class ModelInterpreter:
 
             # Mask filter optimization loop
             for iter in utils.iterations_loop(range(max_iter), see_progress=see_progress):
+                # Calculate the model's output to the original, unchanged instance data
+                ref_output = self.model(data.unsqueeze(0).unsqueeze(0), hidden_state=hidden_state)
+                # Prevent mask filter optimization from backpropagating through the reference output
+                ref_output.detach_()
                 # Perform a single optimization step
-                mask = self.mask_filter_step(mask, data, l1_coeff)
+                mask = self.mask_filter_step(mask, data, ref_output, l1_coeff)
 
         else:
             raise Exception(f'ERROR: Can\'t handle data with more than 3 dimensions. \
@@ -505,11 +521,11 @@ class ModelInterpreter:
         if not seq_final_outputs:
             # Organize the stacked outputs to become a list of outputs for each sequence
             x_lengths_arr = np.array(x_lengths)
-            x_lengths_cum = np.cumsum(x_lengths_arr)
-            start_idx = np.roll(x_lengths_cum, 1)
+            # Indeces at the end of each sequence
+            final_seq_idx = [n_subject*data.shape[1]+x_lengths[n_subject] for n_subject in range(data.shape[0])]
+            start_idx = np.roll(final_seq_idx, 1)
             start_idx[0] = 0
-            end_idx = x_lengths_cum
-            ref_output = [ref_output[start_idx[i]:end_idx[i]] for i in range(len(start_idx))]
+            ref_output = [ref_output[start_idx[i]:final_seq_idx[i]] for i in range(len(start_idx))]
 
         def calc_instance_score(sequence_data, instance, ref_output, x_length, occlusion_wgt):
             # Remove identifier columns from the data
@@ -582,7 +598,8 @@ class ModelInterpreter:
 
     def feature_importance(self, test_data=None, fast_calc=None,
                            see_progress=True, bkgnd_data=None, max_iter=100,
-                           l1_coeff=0, lr=0.001, recur_layer=None):
+                           l1_coeff=0, lr=0.001, recur_layer=None,
+                           debug_loss=False):
         '''Calculate the feature importance scores to interpret the impact
         of each feature in each instance's output.
 
@@ -622,12 +639,20 @@ class ModelInterpreter:
             Pointer to the recurrent layer in the model, if it exists. It should
             either be a LSTM, GRU or RNN network. If none is specified, the
             method will automatically search for a recurrent layer in the model.
+        debug_loss : bool, default False
+            Debugging flag, which makes the method also return an array of the
+            mask filter optimization loss.
 
         Returns
         -------
         feat_scores : numpy.Array
             Array containing the importance scores of each feature, of each
             instance, in the given input sequences.
+
+        if debug_loss is True:
+
+        loss_mtx : np.Array
+            Matrix containing the loss values of the mask filter optimization.
         '''
         if fast_calc is None:
             # Use the predefined option if fast_calc isn't set in the function call
@@ -675,16 +700,26 @@ class ModelInterpreter:
             start_time = time.time()
 
             # Apply mask filter
-            feat_scores = self.mask_filter(test_data, x_lengths_test, max_iter,
-                                           l1_coeff, lr, recur_layer, see_progress=see_progress)
+            if debug_loss:
+                feat_scores, loss_mtx = self.mask_filter(test_data, x_lengths_test, max_iter,
+                                                         l1_coeff, lr, recur_layer, see_progress=see_progress,
+                                                         debug_loss=True)
+            else:
+                feat_scores = self.mask_filter(test_data, x_lengths_test, max_iter,
+                                               l1_coeff, lr, recur_layer, see_progress=see_progress,
+                                               debug_loss=False)
             print(f'Calculation of mask filter values took {time.time() - start_time} seconds')
 
-            return feat_scores
+            if debug_loss:
+                return feat_scores, loss_mtx
+            else:
+                return feat_scores
 
     # [Bonus TODO] Upload model explainer and interpretability plots to Comet.ml
-    def interpret_model(self, bkgnd_data=None, test_data=None, test_labels=None, new_data=False,
-                        df=None, instance_importance=True, feature_importance=False,
-                        fast_calc=None, see_progress=True, save_data=True):
+    def interpret_model(self, bkgnd_data=None, test_data=None, test_labels=None,
+                        new_data=False, df=None, instance_importance=True,
+                        feature_importance=False, fast_calc=None,
+                        see_progress=True, save_data=True, debug_loss=False):
         '''Method to calculate scores of feature and/or instance importance, in
         order to be able to interpret a model on a given data.
 
@@ -736,6 +771,9 @@ class ModelInterpreter:
             If set to True, the possible background data (used in the SHAP
             explainer) and the test data (on which importance scores are
             calculated) are saved as object attributes.
+        debug_loss : bool, default False
+            Debugging flag, which makes the method also return an array of the
+            mask filter optimization loss.
 
         Returns
         -------
@@ -747,6 +785,11 @@ class ModelInterpreter:
             Array containing the importance scores of each feature, of each
             instance, in the given input sequences. Only calculated if
             feature_importance is set to True.
+
+        if debug_loss is True:
+
+        loss_mtx : np.Array
+            Matrix containing the loss values of the mask filter optimization.
         '''
         # Confirm that the model is in evaluation mode to deactivate dropout
         self.model.eval()
@@ -799,16 +842,25 @@ class ModelInterpreter:
         if feature_importance:
             print('Calculating feature importance scores...')
             # Calculate the scores of importance of each feature in each instance
-            self.feat_scores = self.feature_importance(test_data, fast_calc, see_progress, bkgnd_data)
+            if fast_calc and debug_loss:
+                self.feat_scores, loss_mtx = self.feature_importance(test_data, fast_calc, see_progress, bkgnd_data, debug_loss=True)
+            else:
+                self.feat_scores = self.feature_importance(test_data, fast_calc, see_progress, bkgnd_data, debug_loss=False)
 
         print('Done!')
 
         if instance_importance and feature_importance:
-            return self.inst_scores, self.feat_scores
+            if fast_calc and debug_loss:
+                return self.inst_scores, self.feat_scores, loss_mtx
+            else:
+                return self.inst_scores, self.feat_scores
         elif instance_importance and not feature_importance:
             return self.inst_scores
         elif not instance_importance and feature_importance:
-            return self.feat_scores
+            if fast_calc and debug_loss:
+                return self.feat_scores, loss_mtx
+            else:
+                return self.feat_scores
         else:
             warnings.warn('Without setting instance_importance nor feature_importance \
                            to True, the interpret_model function won\'t do anything relevant.')
