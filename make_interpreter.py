@@ -69,7 +69,7 @@ seq_len_dict = dict([(idx, val[0]) for idx, val in list(zip(seq_len_df.index, se
 # +
 n_patients = ALS_df.subject_id.nunique()     # Total number of patients
 n_inputs = len(ALS_df.columns)               # Number of input features
-padding_value = 0                            # Value to be used in the padding
+padding_value = 999999                       # Value to be used in the padding
 
 # Pad data (to have fixed sequence length) and convert into a PyTorch tensor
 data = utils.dataframe_to_padded_tensor(ALS_df, seq_len_dict, n_patients, n_inputs, padding_value=padding_value)
@@ -99,7 +99,7 @@ test_features_denorm = utils.denormalize_data(orig_ALS_df, test_features)
 #
 # Using my custom class for model interpretability through instance and feature importance.
 
-interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=False, SHAP_bkgnd_samples=1000, padding_value=padding_value)
+interpreter = ModelInterpreter(model, ALS_df, label_column=n_inputs-1, fast_calc=False, SHAP_bkgnd_samples=1000, padding_value=999999)
 _ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features, test_labels=test_labels, instance_importance=True, feature_importance=True)
 
 # +

@@ -12,9 +12,9 @@ scikit-learn = "^0.21.2"
 plotly = "^3.9"
 numpy = "^1.16"
 pandas = "^0.24.2"
-shap = {git = "https://github.com/AndreCNF/shap.git"}
 colorlover = "^0.3.0"
 comet_ml = "^1.0"
+shap = { git = "https://github.com/AndreCNF/shap.git", branch = "master" }
 
 [tool.poetry.dev-dependencies]
 pylint = "^2.3"

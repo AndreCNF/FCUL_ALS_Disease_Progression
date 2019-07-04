@@ -4,8 +4,7 @@ import pandas as pd                     # Pandas to handle the data in dataframe
 import numpy as np                      # NumPy to handle numeric and NaN operations
 import shap                             # Module used for the calculation of approximate Shapley values
 import warnings                         # Print warnings for bad practices
-from tqdm import tqdm                   # tqdm allows to track code execution progress
-from tqdm import tqdm_notebook          # tqdm allows to track code execution progress
+from tqdm.auto import tqdm              # tqdm allows to track code execution progress
 import time                             # Calculate code execution time
 import utils                            # Contains auxiliary functions
 from Time_Series_Dataset import Time_Series_Dataset     # Dataset subclass which allows the creation of Dataset objects
@@ -22,9 +21,10 @@ POS_COLOR = 'rgba(255,13,87,1)'
 NEG_COLOR = 'rgba(30,136,229,1)'
 
 class ModelInterpreter:
-    def __init__(self, model, data, labels, seq_len_dict=None, id_column=0, inst_column=1,
-                 fast_calc=True, SHAP_bkgnd_samples=1000, random_seed=42,
-                 feat_names=None, padding_value=999999, occlusion_wgt=0.7):
+    def __init__(self, model, data, labels=None, seq_len_dict=None, id_column=0,
+                 inst_column=1, label_column=None, fast_calc=True,
+                 SHAP_bkgnd_samples=1000, random_seed=42, feat_names=None,
+                 padding_value=999999, occlusion_wgt=0.7):
         '''A machine learning model interpreter which calculates instance and
         feature importance.
 
@@ -55,6 +55,9 @@ class ModelInterpreter:
         inst_column : int, default 1
             Number of the column which corresponds to the instance or timestamp
             identifier in the data tensor.
+        label_column : int, default None
+            Number of the column which corresponds to the label in the data
+            tensor. Only needed if the data is in dataframe format.
         fast_calc : bool, default True
             If set to True, the algorithm uses simple mask filters, occluding
             instances and replacing features with reference values, in order
@@ -88,6 +91,7 @@ class ModelInterpreter:
         self.seq_len_dict = seq_len_dict
         self.id_column = id_column
         self.inst_column = inst_column
+        self.label_column = label_column
         self.fast_calc = fast_calc
         self.SHAP_bkgnd_samples = SHAP_bkgnd_samples
         self.random_seed = random_seed
@@ -101,6 +105,10 @@ class ModelInterpreter:
         if type(data) is torch.Tensor:
             self.data = data
             self.labels = labels
+        elif type(data) is np.ndarray:
+            # Convert from numpy to pytorch
+            self.data = torch.from_numpy(data)
+            self.labels = torch.from_numpy(labels)
         elif type(data) is pd.DataFrame:
             n_ids = data.iloc[:, self.id_column].nunique()      # Total number of unique sequence identifiers
             n_features = len(data.columns)                      # Number of input features
@@ -117,13 +125,18 @@ class ModelInterpreter:
             self.data = dataset.X
             self.labels = dataset.y
 
-            if feat_names is None:
-                # Fetch the column names, ignoring the id and instance id ones
-                self.feat_names = list(data.columns)
-                self.feat_names.remove(self.feat_names[self.id_column])
-                self.feat_names.remove(self.feat_names[self.inst_column])
+            assert self.label_column is not None, 'In case the data is in dataframe format, the number of the column corresponding to the label must be provided.'
+
+            # Fetch the column names, ignoring the id and instance id ones
+            self.feat_names = list(data.columns)
+            [self.feat_names.remove(col) for col in [self.feat_names[self.id_column],
+                                                     self.feat_names[self.inst_column],
+                                                     self.feat_names[self.label_column]]]
+            # Fetch the column numbers, ignoring the id and instance id ones
+            self.feat_num = list(range(len(data.columns)))
+            [self.feat_num.remove(col) for col in [self.id_column, self.inst_column, self.label_column]]
         else:
-            raise Exception('ERROR: Invalid data type. Please provide data in a Pandas DataFrame or PyTorch Tensor format.')
+            raise Exception('ERROR: Invalid data type. Please provide data in a Pandas DataFrame, PyTorch Tensor or NumPy Array format.')
 
         # Declare explainer attribute which will store the SHAP DEEP Explainer object
         self.explainer = None
@@ -354,12 +367,12 @@ class ModelInterpreter:
 
         if len(data.shape) == 3:
             # Loop to go through each sequence in the input data
-            for seq in utils.iterations_loop(range(data.shape[0]), see_progress=see_progress):
+            for seq in tqdm(range(data.shape[0]), disable=not see_progress):
                 # Get the true length of the current sequence
                 seq_len = x_lengths[seq]
 
                 # Loop to go through each instance in the input sequence
-                for inst in utils.iterations_loop(range(seq_len), see_progress=see_progress):
+                for inst in tqdm(range(seq_len), disable=not see_progress):
                     hidden_state = None
                     # Get the hidden state that the model receives as an input
                     if inst > 0:
@@ -378,7 +391,7 @@ class ModelInterpreter:
                     tmp_loss_list = []
 
                     # Mask filter optimization loop
-                    for iter in utils.iterations_loop(range(max_iter), see_progress=see_progress):
+                    for iter in tqdm(range(max_iter), disable=not see_progress):
                         # Calculate the model's output to the original, unchanged instance data
                         ref_output = self.model(data[seq, inst, :].unsqueeze(0).unsqueeze(0), hidden_state=hidden_state)
                         # Prevent mask filter optimization from backpropagating through the reference output
@@ -395,7 +408,7 @@ class ModelInterpreter:
 
         elif len(data.shape) == 2:
             # Loop to go through each instance in the input sequence
-            for inst in utils.iterations_loop(range(data.shape[0]), see_progress=see_progress):
+            for inst in tqdm(range(data.shape[0]), disable=not see_progress):
                 hidden_state = None
                 # Get the hidden state that the model receives as an input
                 if inst > 0:
@@ -411,7 +424,7 @@ class ModelInterpreter:
                 tmp_mask = Variable(mask[inst], requires_grad=True)
 
                 # Mask filter optimization loop
-                for iter in utils.iterations_loop(range(max_iter), see_progress=see_progress):
+                for iter in tqdm(range(max_iter), disable=not see_progress):
                     # Calculate the model's output to the original, unchanged instance data
                     ref_output = self.model(data[inst].unsqueeze(0).unsqueeze(0), hidden_state=hidden_state)
                     # Prevent mask filter optimization from backpropagating through the reference output
@@ -427,7 +440,7 @@ class ModelInterpreter:
             mask.requires_grad_()
 
             # Mask filter optimization loop
-            for iter in utils.iterations_loop(range(max_iter), see_progress=see_progress):
+            for iter in tqdm(range(max_iter), disable=not see_progress):
                 # Calculate the model's output to the original, unchanged instance data
                 ref_output = self.model(data.unsqueeze(0).unsqueeze(0), hidden_state=hidden_state)
                 # Prevent mask filter optimization from backpropagating through the reference output
@@ -522,6 +535,7 @@ class ModelInterpreter:
             # Organize the stacked outputs to become a list of outputs for each sequence
             x_lengths_arr = np.array(x_lengths)
             # Indeces at the end of each sequence
+            # [TODO] Figure out bug with ref_output when applying this to the ALS dataset
             final_seq_idx = [n_subject*data.shape[1]+x_lengths[n_subject] for n_subject in range(data.shape[0])]
             start_idx = np.roll(final_seq_idx, 1)
             start_idx[0] = 0
@@ -580,10 +594,10 @@ class ModelInterpreter:
             return inst_score
 
         inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num], occlusion_wgt)
-                        for inst in range(x_lengths[seq_num])] for seq_num in utils.iterations_loop(range(data.shape[0]), see_progress=see_progress)]
+                        for inst in range(x_lengths[seq_num])] for seq_num in tqdm(range(data.shape[0]), disable=not see_progress)]
         # DEBUG
         # inst_scores = []
-        # for seq_num in utils.iterations_loop(range(data.shape[0]), see_progress=see_progress):
+        # for seq_num in tqdm(range(data.shape[0]), disable=not see_progress):
         #     tmp_list = []
         #     for inst in range(x_lengths[seq_num]):
         #         tmp_list.append(calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num], occlusion_wgt))
@@ -661,52 +675,56 @@ class ModelInterpreter:
         # Sort the test data by sequence length
         test_data, x_lengths_test = utils.sort_by_seq_len(test_data, self.seq_len_dict)
 
-        # Remove identifier columns from the test data
-        features_idx = list(range(test_data.shape[2]))
-        features_idx.remove(self.id_column)
-        features_idx.remove(self.inst_column)
-        test_data = test_data[:, :, features_idx]
-
-        # Make sure that the test data is in type float
-        test_data = test_data.float()
-
         if not fast_calc:
             print(f'Attention: you have chosen to interpret the model using SHAP, with {self.SHAP_bkgnd_samples} background samples applied to {test_data.shape[0]} test samples. This might take a while. Depending on your computer\'s processing power, you should do a coffee break or even go to sleep!')
 
             # Sort the background data by sequence length
             bkgnd_data, x_lengths_bkgnd = utils.sort_by_seq_len(bkgnd_data, self.seq_len_dict)
 
-            # Remove identifier columns from the background data
-            bkgnd_data = bkgnd_data[:, :, features_idx]
+            # Convert the background and test data into a 2D NumPy matrix
+            bkgnd_data = utils.ts_tensor_to_np_matrix(bkgnd_data, self.feat_num, self.padding_value)
+            test_data = utils.ts_tensor_to_np_matrix(test_data, self.feat_num, self.padding_value)
 
-            # Make sure that the background data is in type float
-            bkgnd_data = bkgnd_data.float()
+            # Function that will be used in the kernel explainer, converting a dataframe object into the model's output
+            def f(data, hidden_state=None):
+                # Make sure the data is of type float
+                data = torch.from_numpy(data).unsqueeze(0).float()
+
+                # Calculate the output
+                output = self.model(data, hidden_state=hidden_state)
+
+                return output.detach().numpy()
 
             # Use the background dataset to integrate over
-            self.explainer = shap.DeepExplainer(self.model, bkgnd_data, feedforward_args=[x_lengths_bkgnd])
+            self.explainer = shap.KernelExplainer(f, bkgnd_data, isRNN=True, model_obj=self.model,
+                                                  id_col_num=self.id_column, ts_col_num=self.inst_column)
 
             # Count the time that takes to calculate the SHAP values
             start_time = time.time()
 
             # Explain the predictions of the sequences in the test set
-            feat_scores = self.explainer.shap_values(test_data,
-                                                     feedforward_args=[x_lengths_bkgnd, x_lengths_test],
-                                                     var_seq_len=True, see_progress=see_progress)
+            feat_scores = self.explainer.shap_values(test_data, l1_reg='aic')
             print(f'Calculation of SHAP values took {time.time() - start_time} seconds')
             return feat_scores
 
         else:
+            # Remove identifier columns from the test data
+            test_data = test_data[:, :, self.feat_num]
+
+            # Make sure that the test data is in type float
+            test_data = test_data.float()
+
             # Count the time that takes to calculate the SHAP values
             start_time = time.time()
 
             # Apply mask filter
             if debug_loss:
                 feat_scores, loss_mtx = self.mask_filter(test_data, x_lengths_test, max_iter,
-                                                         l1_coeff, lr, recur_layer, see_progress=see_progress,
+                                                         l1_coeff, lr, recur_layer, disable=not see_progress,
                                                          debug_loss=True)
             else:
                 feat_scores = self.mask_filter(test_data, x_lengths_test, max_iter,
-                                               l1_coeff, lr, recur_layer, see_progress=see_progress,
+                                               l1_coeff, lr, recur_layer, disable=not see_progress,
                                                debug_loss=False)
             print(f'Calculation of mask filter values took {time.time() - start_time} seconds')
 
@@ -797,6 +815,13 @@ class ModelInterpreter:
         if fast_calc is None:
             # Use the predefined option if fast_calc isn't set in the function call
             fast_calc = self.fast_calc
+        else:
+            self.fast_calc = fast_calc
+
+        if test_labels is not None:
+            if type(test_labels) is np.ndarray:
+                # Convert from numpy to pytorch
+                test_labels = torch.from_numpy(test_labels)
 
         if test_data is None:
             if fast_calc:
@@ -810,6 +835,9 @@ class ModelInterpreter:
                 else:
                     # Get the test set from the dataset
                     _, test_data = self.create_bkgnd_test_sets()
+        elif type(test_data) is np.ndarray:
+            # Convert from numpy to pytorch
+            test_data = torch.from_numpy(test_data)
 
         if new_data:
             if df is None:
@@ -825,14 +853,18 @@ class ModelInterpreter:
             # Sort the data by sequence length
             test_data, test_labels, x_lengths_test = utils.sort_by_seq_len(test_data, self.seq_len_dict, test_labels)
 
-        if not fast_calc and bkgnd_data is None:
-            # Get the background set from the dataset
-            bkgnd_data, _ = self.create_bkgnd_test_sets()
+        if not fast_calc:
+            if bkgnd_data is None:
+                # Get the background set from the dataset
+                bkgnd_data, _ = self.create_bkgnd_test_sets()
+            elif type(bkgnd_data) is np.ndarray:
+                # Convert from numpy to pytorch
+                bkgnd_data = torch.from_numpy(bkgnd_data)
 
         if save_data:
             # Save the data used in the model interpretation
             self.bkgnd_data = bkgnd_data
-            self.bkgnd_data = test_data
+            self.test_data = test_data
 
         if instance_importance:
             print('Calculating instance importance scores...')

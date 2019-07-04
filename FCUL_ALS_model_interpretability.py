@@ -292,14 +292,14 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 # Using my custom class for model interpretability through instance and feature importance.
 
 # + {"pixiedust": {"displayParams": {}}}
-interpreter = ModelInterpreter(model, ALS_df, seq_len_dict, fast_calc=True, SHAP_bkgnd_samples=200, padding_value=0)
+interpreter = ModelInterpreter(model, ALS_df, label_column=n_inputs-1, fast_calc=False, SHAP_bkgnd_samples=200, padding_value=0)
 
 # + {"pixiedust": {"displayParams": {}}}
 # # %%pixie_debugger
 # Number of patients to analyse
 n_patients = 1
 
-_, loss_mtx = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=False, feature_importance=True, debug_loss=True)
+_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=False, feature_importance=True)
 # -
 
 loss_mtx

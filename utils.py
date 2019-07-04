@@ -6,8 +6,7 @@ import pandas as pd                                     # Pandas to handle the d
 from datetime import datetime                           # datetime to use proper date and time formats
 import os                                               # os handles directory/workspace changes
 import numpy as np                                      # NumPy to handle numeric and NaN operations
-from tqdm import tqdm                                   # tqdm allows to track code execution progress
-from tqdm import tqdm_notebook                          # tqdm allows to track code execution progress
+from tqdm.auto import tqdm                              # tqdm allows to track code execution progress
 import numbers                                          # numbers allows to check if data is numeric
 from NeuralNetwork import NeuralNetwork                 # Import the neural network model class
 from sklearn.metrics import roc_auc_score               # ROC AUC model performance metric
@@ -293,7 +292,7 @@ def dataframe_to_padded_tensor(df, seq_len_dict, n_ids, n_inputs, id_column='sub
 
     Returns
     -------
-    arr : torch.Tensor or numpy.array
+    arr : torch.Tensor or numpy.ndarray
         PyTorch tensor or NumPy array version of the dataframe, after being
         padded with the specified padding value to have a fixed sequence
         length.
@@ -763,8 +762,8 @@ def pad_list(x_list, length, padding_value=999999):
         List which will be padded.
     length : int
         Desired length for the final padded list.
-    padding_value :
-        Value to use in the padding, to fill the list.
+    padding_value : numeric
+        Value to use in the padding, to fill the sequences.
 
     Returns
     -------
@@ -870,6 +869,36 @@ def change_grad(grad, data, min=0, max=1):
             grad[i] = 0
 
     return grad
+
+
+def ts_tensor_to_np_matrix(data, feat_num=None, padding_value=999999):
+    '''Convert a 3D PyTorch tensor, such as one representing multiple time series
+    data, into a 2D NumPy matrix. Can be useful for applying the SHAP Kernel
+    Explainer.
+
+    Parameters
+    ----------
+    data : torch.Tensor
+        PyTorch tensor containing the three dimensional data being converted.
+    feat_num : list of int, default None
+        List of the column numbers that represent the features. If not specified,
+        all columns will be used.
+    padding_value : numeric
+        Value to use in the padding, to fill the sequences.
+
+    Returns
+    -------
+    data_matrix : numpy.ndarray
+        NumPy two dimensional matrix obtained from the data after conversion.
+    '''
+    # View as a single sequence, i.e. like a dataframe without grouping by id
+    data_matrix = data.contiguous().view(-1, data.shape[2]).detach().numpy()
+    # Remove rows that are filled with padding values
+    if feat_num is not None:
+        data_matrix = data_matrix[[not all(row == padding_value) for row in data_matrix[:, feat_num]]]
+    else:
+        data_matrix = data_matrix[[not all(row == padding_value) for row in data_matrix]]
+    return data_matrix
 
 
 def model_inference(model, seq_len_dict, dataloader=None, data=None, metrics=['loss', 'accuracy', 'AUC'],
@@ -980,8 +1009,9 @@ def model_inference(model, seq_len_dict, dataloader=None, data=None, metrics=['l
             output = unpadded_scores
 
         if seq_final_outputs:
-            # Indeces at the end of each sequence
-            final_seq_idx = [n_subject*features.shape[1]+x_lengths[n_subject]-1 for n_subject in range(features.shape[0])]
+            # Only get the outputs retrieved at the sequences' end
+            # Cumulative sequence lengths
+            final_seq_idx = np.cumsum(x_lengths) - 1
 
             # Get the outputs of the last instances of each sequence
             output = output[final_seq_idx]
