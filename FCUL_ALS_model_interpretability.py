@@ -295,22 +295,10 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 interpreter = ModelInterpreter(model, ALS_df, label_column=n_inputs-1, fast_calc=False, SHAP_bkgnd_samples=200, padding_value=0)
 
 # + {"pixiedust": {"displayParams": {}}}
-# # %%pixie_debugger
 # Number of patients to analyse
 n_patients = 1
 
 _ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=False, feature_importance=True)
-# -
-
-loss_mtx
-
-interpreter.feat_scores[0][5]
-
-torch.max(interpreter.feat_scores)
-
-
-
-[ALS_cols[idx] for idx in [t.item() for t in list((interpreter.feat_scores[0][5] == 1).nonzero())]]
 
 # +
 # Get the current day and time to attach to the saved model's name
@@ -329,7 +317,7 @@ with open(interpreter_filename, 'wb') as file:
 
 # Load saved model interpreter object
 # with open(interpreter_filename, 'rb') as file:
-with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_15_06_2019_19_04.pickle', 'rb') as file:
+with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_05_07_2019_00_22.pickle', 'rb') as file:
     interpreter_loaded = pickle.load(file)
 
 if np.array_equal(interpreter_loaded.feat_scores, interpreter.feat_scores):
@@ -341,9 +329,11 @@ else:
 # Only to use when analysing a model interpreter, after having already been saved
 interpreter = interpreter_loaded
 
-interpreter.feat_scores[0, :x_lengths_test[0]]
-
 # ### Feature importance plots
+
+interpreter.feat_scores
+
+interpreter.feat_scores.shape
 
 # Summarize the effects of all the features
 shap.summary_plot(interpreter.feat_scores.reshape(-1, interpreter.model.lstm.input_size), 
@@ -419,6 +409,10 @@ orig_ALS_df[orig_ALS_df.subject_id == subject_id][['ts', 'p0.1', 'p1', 'p2', 'p3
                                                  .reset_index().drop(columns='index').assign(output=ref_output_s)
 
 # ### Instance importance plots
+
+interpreter.inst_scores
+
+interpreter.inst_scores.shape
 
 # interpreter_loaded.inst_scores[interpreter_loaded.inst_scores == interpreter_loaded.padding_value]
 interpreter.inst_scores[interpreter.inst_scores == 999999] = np.nan

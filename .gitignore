@@ -23,3 +23,7 @@ Matplotlib_venv/
 .ipynb_checkpoints/visualisation_experiments-checkpoint.ipynb
 .ipynb_checkpoints/random_experiments-checkpoint.ipynb
 .ipynb_checkpoints/visualization_experiments-checkpoint.ipynb
+.idea/FCUL_ALS_Disease_Progression.iml
+.idea/modules.xml
+.idea/workspace.xml
+.idea/vcs.xml

@@ -20,6 +20,134 @@ if utils.in_ipynb:
 POS_COLOR = 'rgba(255,13,87,1)'
 NEG_COLOR = 'rgba(30,136,229,1)'
 
+# Auxiliary hidden methods
+def calc_instance_score(model, sequence_data, instance, ref_output, x_length, occlusion_wgt=0.7,
+                        id_column=0, inst_column=1):
+    '''Calculate the instance importance score for a given instance.
+
+    Parameters
+    ----------
+    model : nn.Module
+        Machine learning model which will be interpreted.
+    sequence_data : torch.Tensor
+        Data corresponding to the data sequence to which the current instance 
+        belongs to.
+    instance : int
+        Number of the instance in the sequence. e.g. in a medical time series,
+        the second clinical visit of a patient would be the instance number 1
+        (counting starts at 0).
+    ref_output : torch.Tensor
+        Original model outputs of each instance in the sequence.
+    x_length : int
+        True sequence length, dismissing padding.
+    occlusion_wgt : float, default 0.7
+            Weight given to the occlusion part of the instance importance score.
+            This scores is calculated as a weighted average of the instance's
+            influence on the final output and the variation of the output
+            probability, between the current instance and the previous one. As
+            such, this weight should have a value between 0 and 1, with the
+            output variation receiving the remaining weight (1 - occlusion_wgt),
+            where 0 corresponds to not using the occlusion component at all, 0.5
+            is a normal, unweighted average and 1 deactivates the use of the
+            output variation part. If the value wasn't specified in the
+            intepreter's initialization nor in the method argument, it will
+            default to 0.7
+    id_column : int, default 0
+            Number of the column which corresponds to the subject identifier in
+            the data tensor.
+    inst_column : int, default 1
+        Number of the column which corresponds to the instance or timestamp
+        identifier in the data tensor.
+
+    Returns
+    -------
+    inst_score : float
+        Instance importance score calculated for the current instance, with the 
+        specified parameters.
+    '''
+    # Remove identifier columns from the data
+    features_idx = list(range(sequence_data.shape[1]))
+    features_idx.remove(id_column)
+    features_idx.remove(inst_column)
+    sequence_data = sequence_data[:, features_idx]
+
+    # Indeces without the instance that is being analyzed
+    instances_idx = list(range(sequence_data.shape[0]))
+    instances_idx.remove(instance)
+
+    # Sequence data without the instance that is being analyzed
+    sequence_data = sequence_data[instances_idx, :]
+
+    # Add a third dimension for the data to be readable by the model
+    sequence_data = sequence_data.unsqueeze(0)
+
+    # Calculate the output without the instance that is being analyzed
+    new_output = model(sequence_data, [x_length-1])
+
+    # Only use the last output (i.e. the one from the last instance of the sequence)
+    new_output = new_output[-1].item()
+
+    # Flag that indicates whether the output variation component will be used in the instance importance score
+    # (in a weighted average)
+    use_outvar_score = ref_output.shape[0] > 1
+
+    if use_outvar_score:
+        # Get the output from the previous instance
+        prev_output = ref_output[instance-1].item()
+
+        # Get the output from the current instance
+        curr_output = ref_output[instance].item()
+
+        # Get the last output
+        ref_output = ref_output[x_length-1].item()
+    else:
+        ref_output = ref_output.item()
+
+    # The instance importance score is then the difference between the output probability with the instance
+    # and the probability without the instance
+    inst_score = ref_output - new_output
+
+    if instance > 0 and use_outvar_score:
+        # If it's not the first instance, add the output variation characteristic in a weighted average
+        inst_score = occlusion_wgt * inst_score + (1 - occlusion_wgt) * (curr_output - prev_output)
+
+    # Apply a tanh function to make even the smaller scores (which are the most frequent) more salient
+    inst_score = np.tanh(4 * inst_score)
+
+    return inst_score
+
+class KernelFunction:
+    def __init__(self, model):
+        # Just save the model object to be used in the main function
+        self.model = model
+
+    def f(self, data, hidden_state=None):
+        '''Function that will be used in the SHAP kernel explainer, converting
+        a dataframe object into the model's output.
+
+        Parameters
+        ----------
+        data : numpy.ndarray
+            Data corresponding to a single instance (or timestamp, in a time
+            series) used in the SHAP kernel explainer.
+        hidden_state : torch.Tensor or tuple of two torch.Tensor, default None
+                Hidden state coming from the previous recurrent cell. If none is
+                specified, the hidden state is initialized as zero.
+
+        Returns
+        -------
+        output : numpy.ndarray
+            Output of the model obtained with the given instance data and 
+            possible hidden state.
+        '''
+        # Make sure the data is of type float
+        data = torch.from_numpy(data).unsqueeze(0).float()
+
+        # Calculate the output
+        output = self.model(data, hidden_state=hidden_state)
+
+        return output.detach().numpy()
+
 class ModelInterpreter:
     def __init__(self, model, data, labels=None, seq_len_dict=None, id_column=0,
                  inst_column=1, label_column=None, fast_calc=True,
@@ -75,7 +203,7 @@ class ModelInterpreter:
             to fetch the names of the columns.
         padding_value : numeric
             Value to use in the padding, to fill the sequences.
-        occlusion_wgt : float, default 0.75
+        occlusion_wgt : float, default 0.7
             Weight given to the occlusion part of the instance importance score.
             This scores is calculated as a weighted average of the instance's
             influence on the final output and the variation of the output
@@ -459,7 +587,7 @@ class ModelInterpreter:
             return 1 - mask
 
     def instance_importance(self, data=None, labels=None, x_lengths=None,
-                            see_progress=True, occlusion_wgt=None):
+                            see_progress=True, occlusion_wgt=0.7):
         '''Calculate the instance importance scores to interpret the impact of
         each instance of a sequence on the final output.
 
@@ -477,7 +605,7 @@ class ModelInterpreter:
         see_progress : bool, default True
             If set to True, a progress bar will show up indicating the execution
             of the instance importance scores calculations.
-        occlusion_wgt : float, default None
+        occlusion_wgt : float, default 0.7
             Weight given to the occlusion part of the instance importance score.
             This scores is calculated as a weighted average of the instance's
             influence on the final output and the variation of the output
@@ -532,75 +660,22 @@ class ModelInterpreter:
                                               cols_to_remove=[self.id_column, self.inst_column])
 
         if not seq_final_outputs:
-            # Organize the stacked outputs to become a list of outputs for each sequence
-            x_lengths_arr = np.array(x_lengths)
-            # Indeces at the end of each sequence
-            # [TODO] Figure out bug with ref_output when applying this to the ALS dataset
-            final_seq_idx = [n_subject*data.shape[1]+x_lengths[n_subject] for n_subject in range(data.shape[0])]
+            # Cumulative sequence lengths (true end of the sequences)
+            final_seq_idx = np.cumsum(x_lengths) - 1
             start_idx = np.roll(final_seq_idx, 1)
             start_idx[0] = 0
-            ref_output = [ref_output[start_idx[i]:final_seq_idx[i]] for i in range(len(start_idx))]
+            ref_output = [ref_output[start_idx[i]:final_seq_idx[i]+1] for i in range(len(start_idx))]
 
-        def calc_instance_score(sequence_data, instance, ref_output, x_length, occlusion_wgt):
-            # Remove identifier columns from the data
-            features_idx = list(range(sequence_data.shape[1]))
-            features_idx.remove(self.id_column)
-            features_idx.remove(self.inst_column)
-            sequence_data = sequence_data[:, features_idx]
-
-            # Indeces without the instance that is being analyzed
-            instances_idx = list(range(sequence_data.shape[0]))
-            instances_idx.remove(instance)
-
-            # Sequence data without the instance that is being analyzed
-            sequence_data = sequence_data[instances_idx, :]
-
-            # Add a third dimension for the data to be readable by the model
-            sequence_data = sequence_data.unsqueeze(0)
-
-            # Calculate the output without the instance that is being analyzed
-            new_output = self.model(sequence_data, [x_length-1])
-
-            # Only use the last output (i.e. the one from the last instance of the sequence)
-            new_output = new_output[-1].item()
-
-            # Flag that indicates whether the output variation component will be used in the instance importance score
-            # (in a weighted average)
-            use_outvar_score = ref_output.shape[0] > 1
-
-            if use_outvar_score:
-                # Get the output from the previous instance
-                prev_output = ref_output[instance-1].item()
-
-                # Get the output from the current instance
-                curr_output = ref_output[instance].item()
-
-                # Get the last output
-                ref_output = ref_output[x_length-1].item()
-            else:
-                ref_output = ref_output.item()
-
-            # The instance importance score is then the difference between the output probability with the instance
-            # and the probability without the instance
-            inst_score = ref_output - new_output
-
-            if instance > 0 and use_outvar_score:
-                # If it's not the first instance, add the output variation characteristic in a weighted average
-                inst_score = occlusion_wgt * inst_score + (1 - occlusion_wgt) * (curr_output - prev_output)
-
-            # Apply a tanh function to make even the smaller scores (which are the most frequent) more salient
-            inst_score = np.tanh(4 * inst_score)
-
-            return inst_score
-
-        inst_scores = [[calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num], occlusion_wgt)
+        inst_scores = [[calc_instance_score(self.model, data[seq_num, :, :], inst, ref_output[seq_num],
+                                            x_lengths[seq_num], occlusion_wgt, self.id_column, self.inst_column)
                         for inst in range(x_lengths[seq_num])] for seq_num in tqdm(range(data.shape[0]), disable=not see_progress)]
         # DEBUG
         # inst_scores = []
         # for seq_num in tqdm(range(data.shape[0]), disable=not see_progress):
         #     tmp_list = []
         #     for inst in range(x_lengths[seq_num]):
-        #         tmp_list.append(calc_instance_score(data[seq_num, :, :], inst, ref_output[seq_num], x_lengths[seq_num], occlusion_wgt))
+        #         tmp_list.append(calc_instance_score(self.model, data[seq_num, :, :], inst, ref_output[seq_num],
+        #                                             x_lengths[seq_num], occlusion_wgt, self.id_column, self.inst_column))
         #     inst_scores.append(tmp_list)
 
         # Pad the instance scores lists so that all have the same length
@@ -668,6 +743,7 @@ class ModelInterpreter:
         loss_mtx : np.Array
             Matrix containing the loss values of the mask filter optimization.
         '''
+
         if fast_calc is None:
             # Use the predefined option if fast_calc isn't set in the function call
             fast_calc = self.fast_calc
@@ -685,18 +761,11 @@ class ModelInterpreter:
             bkgnd_data = utils.ts_tensor_to_np_matrix(bkgnd_data, self.feat_num, self.padding_value)
             test_data = utils.ts_tensor_to_np_matrix(test_data, self.feat_num, self.padding_value)
 
-            # Function that will be used in the kernel explainer, converting a dataframe object into the model's output
-            def f(data, hidden_state=None):
-                # Make sure the data is of type float
-                data = torch.from_numpy(data).unsqueeze(0).float()
-
-                # Calculate the output
-                output = self.model(data, hidden_state=hidden_state)
-
-                return output.detach().numpy()
+            # Create a function that represents the model's feedforward operation on a single instance
+            kf = KernelFunction(self.model)
 
             # Use the background dataset to integrate over
-            self.explainer = shap.KernelExplainer(f, bkgnd_data, isRNN=True, model_obj=self.model,
+            self.explainer = shap.KernelExplainer(kf.f, bkgnd_data, isRNN=True, model_obj=self.model,
                                                   id_col_num=self.id_column, ts_col_num=self.inst_column)
 
             # Count the time that takes to calculate the SHAP values

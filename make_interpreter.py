@@ -38,23 +38,8 @@ torch.manual_seed(utils.random_seed)
 # Read the data (already processed, just like the model trained on)
 ALS_df = pd.read_csv(f'{data_path}cleaned/FCUL_ALS_cleaned.csv')
 
-# Read the original data (before normalization)
-orig_ALS_df = pd.read_csv(f'{data_path}cleaned/FCUL_ALS_cleaned_denorm.csv')
-
 # Drop the unnamed index column
 ALS_df.drop(columns=['Unnamed: 0', 'niv'], inplace=True)
-
-# Drop the unnamed index and label columns in the original dataframe
-orig_ALS_df.drop(columns=['Unnamed: 0', 'niv_label', 'niv'], inplace=True)
-
-# +
-# List of used features
-ALS_cols = list(ALS_df.columns)
-
-# Remove features that aren't used by the model to predict the label
-for unused_feature in ['subject_id', 'ts', 'niv_label']:
-    ALS_cols.remove(unused_feature)
-# -
 
 # Load the model with the best validation performance
 # model = utils.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_26_04_2019_23_36.pth')
@@ -92,15 +77,13 @@ test_features, test_labels = next(iter(test_dataloader))
 train_features, train_labels, x_lengths_train = utils.sort_by_seq_len(train_features, seq_len_dict, labels=train_labels)
 test_features, test_labels, x_lengths_test = utils.sort_by_seq_len(test_features, seq_len_dict, labels=test_labels)
 
-# Denormalize the feature values so that the plots are easier to understand
-test_features_denorm = utils.denormalize_data(orig_ALS_df, test_features)
-
 # ## Model Interpreter
 #
 # Using my custom class for model interpretability through instance and feature importance.
 
+# [TODO] See what's wrong with the feature importance calculation on the ALS data, as it's turning out all zeroes
 interpreter = ModelInterpreter(model, ALS_df, label_column=n_inputs-1, fast_calc=False, SHAP_bkgnd_samples=1000, padding_value=999999)
-_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features, test_labels=test_labels, instance_importance=True, feature_importance=True)
+_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features, test_labels=test_labels, instance_importance=False, feature_importance=True)
 
 # +
 # Get the current day and time to attach to the saved model's name
