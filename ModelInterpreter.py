@@ -30,7 +30,7 @@ def calc_instance_score(model, sequence_data, instance, ref_output, x_length, oc
     model : nn.Module
         Machine learning model which will be interpreted.
     sequence_data : torch.Tensor
-        Data corresponding to the data sequence to which the current instance 
+        Data corresponding to the data sequence to which the current instance
         belongs to.
     instance : int
         Number of the instance in the sequence. e.g. in a medical time series,
@@ -62,7 +62,7 @@ def calc_instance_score(model, sequence_data, instance, ref_output, x_length, oc
     Returns
     -------
     inst_score : float
-        Instance importance score calculated for the current instance, with the 
+        Instance importance score calculated for the current instance, with the
         specified parameters.
     '''
     # Remove identifier columns from the data
@@ -137,7 +137,7 @@ class KernelFunction:
         Returns
         -------
         output : numpy.ndarray
-            Output of the model obtained with the given instance data and 
+            Output of the model obtained with the given instance data and
             possible hidden state.
         '''
         # Make sure the data is of type float
@@ -685,7 +685,7 @@ class ModelInterpreter:
         inst_scores = np.array(inst_scores)
         return inst_scores
 
-    def feature_importance(self, test_data=None, fast_calc=None,
+    def feature_importance(self, test_data=None, method='shap', fast_calc=None,
                            see_progress=True, bkgnd_data=None, max_iter=100,
                            l1_coeff=0, lr=0.001, recur_layer=None,
                            debug_loss=False):
@@ -698,12 +698,16 @@ class ModelInterpreter:
             Optionally, the user can specify a subset of data on which model
             interpretation will be made (i.e. calculating feature and/or
             instance importance). Otherwise, all the data is used.
+        method : string, defautl SHAP
+            Defines which interpretability technique to use. Current options
+            include SHAP Kernel Explainer (default) and mask filter.
         fast_calc : bool, default None
-            If set to True, the algorithm uses simple mask filters, occluding
-            instances and replacing features with reference values, in order
-            to do a fast interpretation of the model. If set to False, SHAP
-            values are used for a more precise and truthful interpretation of
-            the model's behavior, requiring longer computation times.
+            If set to True, the algorithm uses less background samples (SHAP)
+            or optimization steps (mask filter), in order to do a fast 
+            interpretation of the model. If set to False, the process takes
+            more time in order to get a more precise and truthful 
+            interpretation of the model's behavior, requiring longer 
+            computation times.
         see_progress : bool, default True
             If set to True, a progress bar will show up indicating the execution
             of the feature importance scores calculations.
@@ -751,32 +755,46 @@ class ModelInterpreter:
         # Sort the test data by sequence length
         test_data, x_lengths_test = utils.sort_by_seq_len(test_data, self.seq_len_dict)
 
-        if not fast_calc:
-            print(f'Attention: you have chosen to interpret the model using SHAP, with {self.SHAP_bkgnd_samples} background samples applied to {test_data.shape[0]} test samples. This might take a while. Depending on your computer\'s processing power, you should do a coffee break or even go to sleep!')
+        if method.lower() == 'shap':
+            if fast_calc:
+                print(f'Attention: you have chosen to interpret the model using SHAP, with {bkgnd_data.shape[0]} background samples, with {self.SHAP_bkgnd_samples} reevalutions per prediction applied to {test_data.shape[0]} test samples. This might take a while. Depending on your computer\'s processing power, you should do a coffee break or even go to sleep!')
+                print('Evaluating the model with a reference value of zero. This should only be done if all the data is processed in a way that, for categorical features, 0 represents missing attribute and, for continuous features, 0 represents the average value of that feature.')
 
-            # Sort the background data by sequence length
-            bkgnd_data, x_lengths_bkgnd = utils.sort_by_seq_len(bkgnd_data, self.seq_len_dict)
+                # Use a single all zeroes sample as a reference value
+                num_id_features = sum([1 if i is not None else 0 for i in [self.id_column, self.inst_column]])
+                bkgnd_data = np.zeros((1, len(self.feat_names)+num_id_features))
+            else:
+                print(f'Attention: you have chosen to interpret the model using SHAP, with {bkgnd_data.shape[0]} background samples, with {self.SHAP_bkgnd_samples} reevalutions per prediction applied to {test_data.shape[0]} test samples. This might take a while. Depending on your computer\'s processing power, you should do a coffee break or even go to sleep!')
 
-            # Convert the background and test data into a 2D NumPy matrix
-            bkgnd_data = utils.ts_tensor_to_np_matrix(bkgnd_data, self.feat_num, self.padding_value)
+                # Sort the background data by sequence length
+                bkgnd_data, x_lengths_bkgnd = utils.sort_by_seq_len(bkgnd_data, self.seq_len_dict)
+
+                # Convert the background data into a 2D NumPy matrix
+                bkgnd_data = utils.ts_tensor_to_np_matrix(bkgnd_data, self.feat_num, self.padding_value)
+
+            # Convert the test data into a 2D NumPy matrix
             test_data = utils.ts_tensor_to_np_matrix(test_data, self.feat_num, self.padding_value)
 
             # Create a function that represents the model's feedforward operation on a single instance
             kf = KernelFunction(self.model)
 
             # Use the background dataset to integrate over
-            self.explainer = shap.KernelExplainer(kf.f, bkgnd_data, isRNN=True, model_obj=self.model,
+            print('Creating a SHAP kernel explainer...')
+            self.explainer = shap.KernelExplainer(kf.f, bkgnd_data, isRNN=True, model_obj=self.model, max_bkgnd_samples=100,
                                                   id_col_num=self.id_column, ts_col_num=self.inst_column)
 
             # Count the time that takes to calculate the SHAP values
             start_time = time.time()
 
             # Explain the predictions of the sequences in the test set
-            feat_scores = self.explainer.shap_values(test_data, l1_reg='aic')
+            print('Calculating feature importance scores for each instance in the test data...')
+            feat_scores = self.explainer.shap_values(test_data, l1_reg='num_features(10)', nsamples=self.SHAP_bkgnd_samples)
             print(f'Calculation of SHAP values took {time.time() - start_time} seconds')
             return feat_scores
 
         else:
+            # [TODO] Fix mask filter feature importance
+            # [TODO] Add fast and slower versions of the mask filter
             # Remove identifier columns from the test data
             test_data = test_data[:, :, self.feat_num]
 
@@ -787,20 +805,15 @@ class ModelInterpreter:
             start_time = time.time()
 
             # Apply mask filter
-            if debug_loss:
-                feat_scores, loss_mtx = self.mask_filter(test_data, x_lengths_test, max_iter,
-                                                         l1_coeff, lr, recur_layer, disable=not see_progress,
-                                                         debug_loss=True)
-            else:
-                feat_scores = self.mask_filter(test_data, x_lengths_test, max_iter,
-                                               l1_coeff, lr, recur_layer, disable=not see_progress,
-                                               debug_loss=False)
+            feat_scores, loss_mtx = self.mask_filter(test_data, x_lengths_test, max_iter,
+                                                     l1_coeff, lr, recur_layer, debug_loss)
             print(f'Calculation of mask filter values took {time.time() - start_time} seconds')
 
             if debug_loss:
                 return feat_scores, loss_mtx
             else:
                 return feat_scores
+        # [TODO] Add more interpretability techniques, such as LIME and Agglomerative Contextual Decomposition (ACD)
 
     # [Bonus TODO] Upload model explainer and interpretability plots to Comet.ml
     def interpret_model(self, bkgnd_data=None, test_data=None, test_labels=None,
@@ -839,12 +852,14 @@ class ModelInterpreter:
             words, the algorithm will analyze the impact that each instance of
             an input sequence had on the output.
         feature_importance : bool, default False
-            If set to True, feature importance is made on the data. In other
-            words, the algorithm will analyze the impact that each feature of
+            Defines which feature importance interpretability technique to use.  
+            The algorithm will analyze the impact that each feature of
             an instance had on the output. This is analyzed instance by instance,
             not in the entire sequence at once. For example, from the feature
             importance alone, it's not straightforward how a value in a previous
-            instance impacted the current output.
+            instance impacted the current output. Current options include SHAP 
+            Kernel Explainer (default) and mask filter. If set to False, no
+            feature importance will be done.
         fast_calc : bool, default None
             If set to True, the algorithm uses simple mask filters, occluding
             instances and replacing features with reference values, in order
@@ -880,6 +895,14 @@ class ModelInterpreter:
         '''
         # Confirm that the model is in evaluation mode to deactivate dropout
         self.model.eval()
+
+        if feature_importance:
+            try:
+                feature_importance = feature_importance.lower()
+                if feature_importance != 'shap' and feature_importance != 'mask filter':
+                    raise(f'ERROR: Specified {feature_importance} feature importance method isn\'t valid. Available options are \"shap\" and\"mask filter\".')
+            except:
+                raise(f'ERROR: {feature_importance} is an incorrectly defined feature importance method, as it should be a string. Available options are \"shap\" and\"mask filter\".')
 
         if fast_calc is None:
             # Use the predefined option if fast_calc isn't set in the function call
@@ -943,10 +966,10 @@ class ModelInterpreter:
         if feature_importance:
             print('Calculating feature importance scores...')
             # Calculate the scores of importance of each feature in each instance
-            if fast_calc and debug_loss:
-                self.feat_scores, loss_mtx = self.feature_importance(test_data, fast_calc, see_progress, bkgnd_data, debug_loss=True)
+            if feature_importance == 'mask filter' and debug_loss:
+                self.feat_scores, loss_mtx = self.feature_importance(test_data, feature_importance, fast_calc, see_progress, bkgnd_data, debug_loss=True)
             else:
-                self.feat_scores = self.feature_importance(test_data, fast_calc, see_progress, bkgnd_data, debug_loss=False)
+                self.feat_scores = self.feature_importance(test_data, feature_importance, fast_calc, see_progress, bkgnd_data, debug_loss=False)
 
         print('Done!')
 

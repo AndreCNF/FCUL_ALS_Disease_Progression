@@ -1,18 +1,12 @@
 import pandas as pd              # Pandas to handle the data in dataframes
-import re                        # re to do regex searches in string data
 import os                        # os handles directory/workspace changes
-import numpy as np               # NumPy to handle numeric and NaN operations
-from tqdm import tqdm_notebook   # tqdm allows to track code execution progress
 import torch                     # PyTorch to create and apply deep learning models
-from torch.utils.data.sampler import SubsetRandomSampler
-import shap                      # Model-agnostic interpretability package inspired on Shapley values
 import pickle                    # Save python objects in files
 from datetime import datetime    # datetime to use proper date and time formats
 import utils                     # Contains auxiliary functions
 from Time_Series_Dataset import Time_Series_Dataset # Dataset subclass which allows the creation of Dataset objects
 from ModelInterpreter import ModelInterpreter # Class that enables the interpretation of models that handle variable sequence length input data
 import numpy as np               # Math operations with NumPy to confirm model's behaviour
-import time                      # Calculate code execution time
 
 # +
 # Change to parent directory (presumably "Documents")
@@ -42,8 +36,7 @@ ALS_df = pd.read_csv(f'{data_path}cleaned/FCUL_ALS_cleaned.csv')
 ALS_df.drop(columns=['Unnamed: 0', 'niv'], inplace=True)
 
 # Load the model with the best validation performance
-# model = utils.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_26_04_2019_23_36.pth')
-model = utils.load_checkpoint(f'{model_path}checkpoint_no_NIV_10_05_2019_03_03.pth')
+model = utils.load_checkpoint(f'{model_path}checkpoint_07_06_2019_23_14.pth')
 
 # ## Getting train and test sets, in tensor format
 
@@ -81,8 +74,7 @@ test_features, test_labels, x_lengths_test = utils.sort_by_seq_len(test_features
 #
 # Using my custom class for model interpretability through instance and feature importance.
 
-# [TODO] See what's wrong with the feature importance calculation on the ALS data, as it's turning out all zeroes
-interpreter = ModelInterpreter(model, ALS_df, label_column=n_inputs-1, fast_calc=False, SHAP_bkgnd_samples=1000, padding_value=999999)
+interpreter = ModelInterpreter(model, ALS_df, label_column=n_inputs-1, fast_calc=False, SHAP_bkgnd_samples=100, padding_value=999999)
 _ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features, test_labels=test_labels, instance_importance=False, feature_importance=True)
 
 # +

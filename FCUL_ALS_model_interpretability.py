@@ -317,7 +317,12 @@ with open(interpreter_filename, 'wb') as file:
 
 # Load saved model interpreter object
 # with open(interpreter_filename, 'rb') as file:
-with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_05_07_2019_00_22.pickle', 'rb') as file:
+# with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_14_05_2019_02_12.pickle', 'rb') as file:
+# with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_08_07_2019_13_50.pickle', 'rb') as file:
+# with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_09_07_2019_09_30.pickle', 'rb') as file:
+# with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_09_07_2019_18_34.pickle', 'rb') as file:
+# with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_10_07_2019_18_31.pickle', 'rb') as file:
+with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_10_07_2019_05_23.pickle', 'rb') as file:
     interpreter_loaded = pickle.load(file)
 
 if np.array_equal(interpreter_loaded.feat_scores, interpreter.feat_scores):
@@ -333,27 +338,23 @@ interpreter = interpreter_loaded
 
 interpreter.feat_scores
 
-interpreter.feat_scores.shape
-
 # Summarize the effects of all the features
 shap.summary_plot(interpreter.feat_scores.reshape(-1, interpreter.model.lstm.input_size), 
                   features=test_features_denorm[:, :, 2:].view(-1, interpreter.model.lstm.input_size).numpy(), 
                   feature_names=ALS_cols, plot_type='bar')
 
+interpreter.feat_scores.reshape(-1, model.lstm.input_size).shape
+
+test_features_denorm[:, :, 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy().shape
+
 # Summarize the effects of all the features
 shap.summary_plot(interpreter.feat_scores.reshape(-1, model.lstm.input_size), 
-                  features=test_features_denorm[:, :, 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy(), 
+                  features=test_features_denorm[:, :interpreter.feat_scores.shape[1], 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy(), 
                   feature_names=ALS_cols, plot_type='violin')
 
 # **Comments:**
 #
-# [Using padding value of 999999]
-#
-# * The above summary plot isn't clear, as there doesn't seem to be any distinction between feature's high and low values impact on the output. However, it might be doe to padding values being used in the background data (same reason for the predictions bellow also being wrong).
-#
-# [Using padding value of 0]
-#
-# * The plot now makes perfect sense, showing the different effects of low or high values of each feature, with apparently realistic reasoning. This also confirms that the paddings are still messing with the SHAP values calculation.
+# With the current SHAP Kernel Explainer, this plot seems to make sense. However, if not enough samples are used, there isn't much distinction between actually important features and not so relevant ones.
 
 # Choosing which example to use
 subject_id = 125
@@ -377,7 +378,7 @@ shap.force_plot(interpreter.explainer.expected_value[0],
 shap.initjs()
 
 # Choosing which timestamp to use
-ts = 10
+ts = 9
 
 # Plot the explanation of one prediction
 shap.force_plot(interpreter.explainer.expected_value[0], 
@@ -387,17 +388,13 @@ shap.force_plot(interpreter.explainer.expected_value[0],
 # -
 # **Comments:**
 #
-# [Using padding value of 999999]
+# With the current SHAP Kernel Explainer, the sum of the contributions match the real output values. As such, it's possible to see how each sequence's output progresses and why (which features had the biggest positive or negative impact).
 #
-# * It seems as if the SHAP values weren't indexed in the same way as the instance importance scores. Patients such as 125 shouldn't be highly probable of NIV use, with high influence of timestamps 9 and 10, and then have such a low estimated output value in the feature importance part.
+# Although the top features can vary a bit in their ranking when using different quantities of background data and nsamples, as well as having a very small importance difference between them, it appears to increasingly resemble the real behaviour of the model (with increasing background samples).
 #
-# * On the other hand, the dataframe query bellow shows that the data is indeed as it's shown in the force plot. There might be some critical problem in the way SHAP is calculating this values or at least the expected output value.
+# Since this data is processed to have 0 as missing value in categorical features and as the mean in continuous features, if the only background data used is an all zeroes samples, it's possible to do more nsamples in a faster way and achieve a more truthful interpreter.
 #
-# [Using padding value of 0]
-#
-# * Although the summary plot improved, the force plots still show incorrect prediction values, most likely due to the interference of the padding values.
-#
-# * I might need to make my own version of a Shapley values estimator, adapted for multivariate sequential data and PyTorch, making it only select non-padding values from the background data and use the current hidden state in the model's output.
+# [TODO] Make sure that a model interpreter trained on very big quantities of background data and nsamples closely resembles the results achieved with an all zeroes sample.
 
 ref_output = interpreter.model(test_features[patient, :, 2:].float().unsqueeze(0), [x_lengths_test[patient]])
 

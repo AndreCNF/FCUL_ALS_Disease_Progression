@@ -74,7 +74,7 @@ scikit-learn==0.21.2
 scipy==1.3.0
 Send2Trash==1.5.0
 # Editable install with no version control (shap==0.29.3)
--e git+https://github.com/AndreCNF/shap.git@3d6a6e4c7ddfe258398345d59e006fed4c96417d#egg=shap
+-e git+https://github.com/AndreCNF/shap.git@f0777334bd82a1bacad578eaf1931c3ecbf40ec6#egg=shap
 six==1.12.0
 terminado==0.8.2
 testpath==0.4.2
