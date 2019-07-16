@@ -36,8 +36,8 @@ else:
                    specified. Otherwise, model version control won\'t be available.')
 
 # Set random seed to the specified value
-np.random.seed(utils.random_seed)
-torch.manual_seed(utils.random_seed)
+np.random.set_state(utils.random_seed)
+torch.manual_seed(utils.random_seed[1][0])
 
 # Change to parent directory (presumably "Documents")
 os.chdir("../..")

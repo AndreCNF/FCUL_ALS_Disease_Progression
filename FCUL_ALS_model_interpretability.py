@@ -86,6 +86,12 @@ def configure_plotly_browser_state():
 # Set random seed to the specified value
 np.random.seed(utils.random_seed)
 torch.manual_seed(utils.random_seed)
+# np.random.set_state(utils.random_seed)
+# torch.manual_seed(utils.random_seed[1][0])
+
+# Sequence and instance identifier columns' numbers
+id_column = 0
+inst_column = 1
 
 # ## Loading data and model
 
@@ -121,7 +127,6 @@ for unused_feature in ['subject_id', 'ts', 'niv_label']:
 ALS_cols
 
 # Load the model with the best validation performance
-# model = utils.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_no_NIV_10_05_2019_03_03.pth')
 model = utils.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_07_06_2019_23_14.pth')
 
 model
@@ -154,6 +159,13 @@ train_indices, val_indices, test_indices            = utils.create_train_sets(da
 train_features, train_labels = next(iter(train_dataloader))
 test_features, test_labels = next(iter(test_dataloader))
 
+# Get the original lengths of the sequences and sort the data
+train_features, train_labels, x_lengths_train = utils.sort_by_seq_len(train_features, seq_len_dict, labels=train_labels)
+test_features, test_labels, x_lengths_test = utils.sort_by_seq_len(test_features, seq_len_dict, labels=test_labels)
+
+# Create a denormalized version of the feature values so that the plots are easier to understand
+test_features_denorm = utils.denormalize_data(orig_ALS_df, test_features, see_progress=False)
+
 # ## Confirm performance metrics
 
 output, metrics_vals = utils.model_inference(model, seq_len_dict, dataloader=test_dataloader, 
@@ -161,82 +173,39 @@ output, metrics_vals = utils.model_inference(model, seq_len_dict, dataloader=tes
 
 metrics_vals
 
-# +
-# Get the original lengths of the sequences, for the test data
-x_lengths_test = [seq_len_dict[patient] for patient in list(test_features[:, 0, 0].numpy())]
-
-# Sorted indeces to get the data sorted by sequence length
-data_sorted_idx = list(np.argsort(x_lengths_test)[::-1])
-
-# Sort the x_lengths array by descending sequence length
-x_lengths_test = [x_lengths_test[idx] for idx in data_sorted_idx]
-
-# Sort the features and labels by descending sequence length
-test_data_exp = test_features[data_sorted_idx, :, :]
-test_labels_ = test_labels[data_sorted_idx, :]
-
-# +
-# Adjust the labels so that it gets the exact same shape as the predictions
-# (i.e. sequence length = max sequence length of the current batch, not the max of all the data)
-labels = torch.nn.utils.rnn.pack_padded_sequence(test_labels_, x_lengths_test, batch_first=True)
-labels, _ = torch.nn.utils.rnn.pad_packed_sequence(labels, batch_first=True, padding_value=999999)
-
-mask = (labels <= 1).view(-1, 1).float()                    # Create a mask by filtering out all labels that are not a padding value
-unpadded_labels = torch.masked_select(labels.contiguous().view(-1, 1), mask.byte()) # Completely remove the padded values from the labels using the mask
-# -
-
-[tensor.item() for tensor in list(unpadded_labels.int())]
-
-[tensor.item() for tensor in list(output)]
-
-list(np.diff(unpadded_labels.int().numpy()))
-
-[i for i, x in enumerate(list(np.diff(unpadded_labels.int().numpy()))) if x==1]
-
-[i for i, x in enumerate(list(np.diff(output.int().numpy()))) if x==1]
-
-# **Comment:** [Before removing NIV from the features] Most times, the model only predicts NIV use after the patient already started that treatment. This means that it usely only predicts the continuation of the treatment, which isn't so useful. Need to experiment training a model without giving any information regarding current NIV usage.
-
 # ## SHAP
 
-# Get the original lengths of the sequences and sort the data
-train_features, train_labels, x_lengths_train = utils.sort_by_seq_len(train_features, seq_len_dict, labels=train_labels)
-test_features, test_labels, x_lengths_test = utils.sort_by_seq_len(test_features, seq_len_dict, labels=test_labels)
-
-test_features[0, 0]
-
-# Denormalize the feature values so that the plots are easier to understand
-test_features_denorm = utils.denormalize_data(orig_ALS_df, test_features, see_progress=False)
-
-test_features[0, 0]
-
-test_features_denorm[0, 0]
+# ### Deep Explainer
 
 # + {"pixiedust": {"displayParams": {}}}
 # Use the first n_bkgnd_samples training examples as our background dataset to integrate over
 # (Ignoring the first 2 features, as they constitute the identifiers 'subject_id' and 'ts')
 n_bkgnd_samples = 200
-explainer = shap.DeepExplainer(model, train_features[:n_bkgnd_samples, :, 2:].float(), feedforward_args=[x_lengths_train])
+explainer = shap.DeepExplainer(model, train_features[:n_bkgnd_samples, :, 2:].float(), feedforward_args=[x_lengths_train[:n_bkgnd_samples]])
 
 # + {"pixiedust": {"displayParams": {}}}
 start_time = time.time()
-# Explain the predictions of the first 10 patients in the test set
-n_samples = 1
+# Explain the predictions of the first n_samples patients in the test set
+n_samples = 10
 shap_values = explainer.shap_values(test_features[:n_samples, :, 2:].float(), 
-                                    feedforward_args=[x_lengths_train, x_lengths_test[:n_samples]],
+                                    feedforward_args=[x_lengths_train[:n_bkgnd_samples], x_lengths_test[:n_samples]],
                                     var_seq_len=True)
 print(f'Calculation of SHAP values took {time.time() - start_time} seconds')
 # -
 
 explainer.expected_value[0]
 
+# Choosing which example to use
+subject_id = 39
+patient = utils.find_subject_idx(test_features_denorm, subject_id=subject_id)
+patient
+
 # +
 # Init the JS visualization code
 shap.initjs()
 
 # Choosing which example to use
-patient = 0
-ts = 1
+ts = 9
 
 # Plot the explanation of one prediction
 shap.force_plot(explainer.expected_value[0], shap_values[patient][ts], features=test_features[patient, ts, 2:].numpy(), feature_names=ALS_cols)
@@ -282,23 +251,85 @@ shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_
 #
 # [Before removing padings from data]
 # * The SHAP values are significantly higher than what I usually see (tends to be between -1 and 1, not between -100000 and 250000). It seems to be because of the padding (the padding value is 999999).
-# * ~The output values also seem to be wrong in the patients' force plot, as it goes above 1.~ It doesn't seem to be a problem after all, it's just a SHAP indicator of whether the prediction will be 0 (if the value is negative) or 1 (if the value is positive).
+# * The output values also seem to be wrong in the patients' force plot, as it goes above 1 instead of matching the original output values.
 #
 # [After removing padings from data]
-# * The SHAP values now seem to have normal values (between -1 and 1) and the plots also look good.
+# * The SHAP values now seem to have normal values (between -1 and 1) and the plots also look good. However, the sum of the contributions still doesn't add up to the original output values.
 
+# ### Kernel Explainer
+
+# Use a single all zeroes sample as a reference value
+num_id_features = sum([1 if i is not None else 0 for i in [id_column, inst_column]])
+bkgnd_data = np.zeros((1, len(ALS_cols)+num_id_features))
+
+# Convert the test data into a 2D NumPy matrix
+test_data = utils.ts_tensor_to_np_matrix(test_features, list(range(2, len(ALS_df.columns)-1)), padding_value)
+
+from ModelInterpreter import KernelFunction
+
+# Create a function that represents the model's feedforward operation on a single instance
+kf = KernelFunction(model)
+
+# Use the background dataset to integrate over
+explainer = shap.KernelExplainer(kf.f, bkgnd_data, isRNN=True, model_obj=model, max_bkgnd_samples=100,
+                                 id_col_num=id_column, ts_col_num=inst_column)
+
+# Explain the predictions of the sequences in the test set
+feat_scores = explainer.shap_values(test_data, l1_reg='num_features(10)', nsamples=3000)
+
+# Summarize the effects of all the features
+shap.summary_plot(feat_scores.reshape(-1, model.lstm.input_size), 
+                  features=test_features_denorm[:, :, 2:].view(-1, model.lstm.input_size).numpy(), 
+                  feature_names=ALS_cols, plot_type='bar')
+
+# Summarize the effects of all the features
+shap.summary_plot(interpreter.feat_scores.reshape(-1, model.lstm.input_size), 
+                  features=test_features_denorm[:, :interpreter.feat_scores.shape[1], 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy(), 
+                  feature_names=ALS_cols, plot_type='violin')
+
+# Choosing which example to use
+subject_id = 125
+patient = utils.find_subject_idx(test_features_denorm, subject_id=subject_id)
+patient
+
+# +
+# Init the JS visualization code
+shap.initjs()
+
+# True sequence length of the current patient's data
+seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
+
+# Plot the explanation of the predictions for one patient
+shap.force_plot(interpreter.explainer.expected_value[0], 
+                interpreter.feat_scores[patient, :seq_len], 
+                features=test_features_denorm[patient, :seq_len, 2:].numpy(), 
+                feature_names=ALS_cols)
+# + {}
+# Init the JS visualization code
+shap.initjs()
+
+# Choosing which timestamp to use
+ts = 9
+
+# Plot the explanation of one prediction
+shap.force_plot(interpreter.explainer.expected_value[0], 
+                interpreter.feat_scores[patient][ts], 
+                features=test_features_denorm[patient, ts, 2:].numpy(), 
+                feature_names=ALS_cols)
+# -
 # ## Model Interpreter
 #
 # Using my custom class for model interpretability through instance and feature importance.
 
 # + {"pixiedust": {"displayParams": {}}}
-interpreter = ModelInterpreter(model, ALS_df, label_column=n_inputs-1, fast_calc=False, SHAP_bkgnd_samples=200, padding_value=0)
+interpreter = ModelInterpreter(model, ALS_df, label_column=n_inputs-1, fast_calc=True, , SHAP_bkgnd_samples=3000, padding_value=999999)
 
 # + {"pixiedust": {"displayParams": {}}}
 # Number of patients to analyse
-n_patients = 1
+# n_patients = 1
 
-_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=False, feature_importance=True)
+# _ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=False, feature_importance=True)
+_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features, test_labels=test_labels, instance_importance=True, feature_importance=True)
 
 # +
 # Get the current day and time to attach to the saved model's name
@@ -317,11 +348,6 @@ with open(interpreter_filename, 'wb') as file:
 
 # Load saved model interpreter object
 # with open(interpreter_filename, 'rb') as file:
-# with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_14_05_2019_02_12.pickle', 'rb') as file:
-# with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_08_07_2019_13_50.pickle', 'rb') as file:
-# with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_09_07_2019_09_30.pickle', 'rb') as file:
-# with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_09_07_2019_18_34.pickle', 'rb') as file:
-# with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_10_07_2019_18_31.pickle', 'rb') as file:
 with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_10_07_2019_05_23.pickle', 'rb') as file:
     interpreter_loaded = pickle.load(file)
 
@@ -390,7 +416,7 @@ shap.force_plot(interpreter.explainer.expected_value[0],
 #
 # With the current SHAP Kernel Explainer, the sum of the contributions match the real output values. As such, it's possible to see how each sequence's output progresses and why (which features had the biggest positive or negative impact).
 #
-# Although the top features can vary a bit in their ranking when using different quantities of background data and nsamples, as well as having a very small importance difference between them, it appears to increasingly resemble the real behaviour of the model (with increasing background samples).
+# Although the top features can vary a bit in their ranking when using different quantities of background data and nsamples, as well as having a very small importance difference between them, it appears to increasingly resemble the real behaviour of the model (with increasing background samples). Furthermore, despite the Deep Explainer having issues in matching the original output values, it showed a similar feature importance ranking.
 #
 # Since this data is processed to have 0 as missing value in categorical features and as the mean in continuous features, if the only background data used is an all zeroes samples, it's possible to do more nsamples in a faster way and achieve a more truthful interpreter.
 #
@@ -431,8 +457,6 @@ layout = go.Layout(
 fig = go.Figure(data=data, layout=layout)
 py.iplot(fig, filename='basic-bar')
 
-patient = 0
-
 # +
 # True sequence length of the current patient's data
 seq_len = seq_len_dict[test_features[patient, 0, 0].item()]
@@ -444,46 +468,7 @@ interpreter.instance_importance_plot(test_features, interpreter.inst_scores, pat
 ref_output = interpreter.model(test_features[patient, :, 2:].float().unsqueeze(0), [x_lengths_test[patient]])
 ref_output
 
-len(ref_output)
-
-x_lengths_test[patient]
-
 ref_output[-1].item()
-
-ref_output2, _ = utils.model_inference(interpreter.model, interpreter.seq_len_dict, data=(test_features[patient].unsqueeze(0), test_labels[patient].unsqueeze(0)),
-                                       metrics=[''], seq_final_outputs=True)
-ref_output2.item()
-
-# +
-instance = 0
-sequence_data = test_features[patient, :, 2:].float()
-x_length = x_lengths_test[patient]
-
-# Indeces without the instance that is being analyzed
-instances_idx = list(range(sequence_data.shape[0]))
-instances_idx.remove(instance)
-
-# Sequence data without the instance that is being analyzed
-sequence_data = sequence_data[instances_idx, :]
-
-# Add a third dimension for the data to be readable by the model
-sequence_data = sequence_data.unsqueeze(0)
-
-# Calculate the output without the instance that is being analyzed
-new_output = interpreter.model(sequence_data, [x_length-1])
-new_output[-1].item()
-# -
-
-test_features[patient, :, 2:].shape
-
-sequence_data.shape
-
-ref_output[-1].item() - new_output[-1].item()
-
-x_lengths_test_cumsum = np.cumsum(x_lengths_test[:5])
-x_lengths_test_cumsum
-
-output[x_lengths_test_cumsum-1]
 
 n_patients
 
@@ -497,4 +482,6 @@ test_features[:n_patients].shape
 
 interpreter.inst_scores.shape
 
-interpreter.instance_importance_plot(test_features[:n_patients], interpreter.inst_scores, pred_prob=pred_prob)
+interpreter.instance_importance_plot(test_features[:n_patients], interpreter.inst_scores[:n_patients], pred_prob=pred_prob)
+
+

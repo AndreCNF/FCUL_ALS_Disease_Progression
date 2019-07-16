@@ -181,6 +181,8 @@ ALS_proc_df.to_csv(f'{data_path}cleaned/FCUL_ALS_cleaned_denorm.csv')
 ALS_proc_df.describe().transpose()
 
 # ## Normalizing continuous values
+#
+# Continuous data is normalized into z-scores, where 0 represents the mean and an absolute value of 1 corresponds to the standard deviation.
 
 ALS_proc_df = utils.normalize_data(ALS_proc_df)
 ALS_proc_df.head()

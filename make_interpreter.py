@@ -74,8 +74,8 @@ test_features, test_labels, x_lengths_test = utils.sort_by_seq_len(test_features
 #
 # Using my custom class for model interpretability through instance and feature importance.
 
-interpreter = ModelInterpreter(model, ALS_df, label_column=n_inputs-1, fast_calc=False, SHAP_bkgnd_samples=100, padding_value=999999)
-_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features, test_labels=test_labels, instance_importance=False, feature_importance=True)
+interpreter = ModelInterpreter(model, ALS_df, label_column=n_inputs-1, fast_calc=True, SHAP_bkgnd_samples=3000, padding_value=999999)
+_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features, test_labels=test_labels, instance_importance=True, feature_importance=True)
 
 # +
 # Get the current day and time to attach to the saved model's name

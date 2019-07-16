@@ -661,10 +661,10 @@ class ModelInterpreter:
 
         if not seq_final_outputs:
             # Cumulative sequence lengths (true end of the sequences)
-            final_seq_idx = np.cumsum(x_lengths) - 1
+            final_seq_idx = np.cumsum(x_lengths)
             start_idx = np.roll(final_seq_idx, 1)
             start_idx[0] = 0
-            ref_output = [ref_output[start_idx[i]:final_seq_idx[i]+1] for i in range(len(start_idx))]
+            ref_output = [ref_output[start_idx[i]:final_seq_idx[i]] for i in range(len(start_idx))]
 
         inst_scores = [[calc_instance_score(self.model, data[seq_num, :, :], inst, ref_output[seq_num],
                                             x_lengths[seq_num], occlusion_wgt, self.id_column, self.inst_column)
@@ -703,10 +703,10 @@ class ModelInterpreter:
             include SHAP Kernel Explainer (default) and mask filter.
         fast_calc : bool, default None
             If set to True, the algorithm uses less background samples (SHAP)
-            or optimization steps (mask filter), in order to do a fast 
+            or optimization steps (mask filter), in order to do a fast
             interpretation of the model. If set to False, the process takes
-            more time in order to get a more precise and truthful 
-            interpretation of the model's behavior, requiring longer 
+            more time in order to get a more precise and truthful
+            interpretation of the model's behavior, requiring longer
             computation times.
         see_progress : bool, default True
             If set to True, a progress bar will show up indicating the execution
@@ -852,12 +852,12 @@ class ModelInterpreter:
             words, the algorithm will analyze the impact that each instance of
             an input sequence had on the output.
         feature_importance : bool, default False
-            Defines which feature importance interpretability technique to use.  
+            Defines which feature importance interpretability technique to use.
             The algorithm will analyze the impact that each feature of
             an instance had on the output. This is analyzed instance by instance,
             not in the entire sequence at once. For example, from the feature
             importance alone, it's not straightforward how a value in a previous
-            instance impacted the current output. Current options include SHAP 
+            instance impacted the current output. Current options include SHAP
             Kernel Explainer (default) and mask filter. If set to False, no
             feature importance will be done.
         fast_calc : bool, default None

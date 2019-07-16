@@ -13,10 +13,14 @@ from sklearn.metrics import roc_auc_score               # ROC AUC model performa
 import warnings                                         # Print warnings for bad practices
 import sys                                              # Identify types of exceptions
 
+# [TODO] Make the random seed a user option (randomly generated or user defined)
 # Random seed used in PyTorch and NumPy's random operations (such as weight initialization)
+# Automatic seed
+# random_seed = np.random.get_state()
+# np.random.set_state(random_seed)
+# torch.manual_seed(random_seed[1][0])
+# Manual seed
 random_seed = 0
-
-# Set random seed to the specified value
 np.random.seed(random_seed)
 torch.manual_seed(random_seed)
 
@@ -596,7 +600,7 @@ def create_train_sets(dataset, test_train_ratio=0.2, validation_ratio=0.1, batch
         If set to True, the function returns the dataloader objects of
         the train, validation and test sets and also the indices of the
         sets' data. Otherwise, it only returns the data loaders.
-    random_seed : int, default 42
+    random_seed : int or tuple, default 42
         Seed used when shuffling the data.
     shuffle_dataset : bool, default True
         If set to True, the data of which set is shuffled.
@@ -617,7 +621,12 @@ def create_train_sets(dataset, test_train_ratio=0.2, validation_ratio=0.1, batch
     indices = list(range(dataset_size))
     test_split = int(np.floor(test_train_ratio * dataset_size))
     if shuffle_dataset:
-        np.random.seed(random_seed)
+        if type(random_seed) is int:
+            np.random.seed(random_seed)
+        elif type(random_seed) is tuple:
+            np.random.set_state(random_seed)
+        else:
+            raise(f'ERROR: {type(random_seed)} is an incorrect random seed type. It should either be an integer or a random state tuple.')
         np.random.shuffle(indices)
     train_indices, test_indices = indices[test_split:], indices[:test_split]
 
@@ -625,7 +634,6 @@ def create_train_sets(dataset, test_train_ratio=0.2, validation_ratio=0.1, batch
     train_dataset_size = len(train_indices)
     val_split = int(np.floor(validation_ratio * train_dataset_size))
     if shuffle_dataset:
-        np.random.seed(random_seed)
         np.random.shuffle(train_indices)
     train_indices, val_indices = train_indices[val_split:], train_indices[:val_split]
 
@@ -1243,7 +1251,8 @@ def train(model, train_dataloader, val_dataloader, test_dataloader, seq_len_dict
                         "n_hidden": model.n_hidden,
                         "n_layers": model.n_layers,
                         "learning_rate": lr,
-                        "p_dropout": model.p_dropout}
+                        "p_dropout": model.p_dropout,
+                        "random_seed": random_seed}
         experiment.log_parameters(hyper_params)
 
         if features_list is not None:
