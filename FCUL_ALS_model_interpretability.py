@@ -322,14 +322,14 @@ shap.force_plot(interpreter.explainer.expected_value[0],
 # Using my custom class for model interpretability through instance and feature importance.
 
 # + {"pixiedust": {"displayParams": {}}}
-interpreter = ModelInterpreter(model, ALS_df, label_column=n_inputs-1, fast_calc=True, , SHAP_bkgnd_samples=3000, padding_value=999999)
+interpreter = ModelInterpreter(model, ALS_df, label_column=n_inputs-1, fast_calc=True, SHAP_bkgnd_samples=3000, padding_value=999999)
 
 # + {"pixiedust": {"displayParams": {}}}
 # Number of patients to analyse
 # n_patients = 1
 
 # _ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=False, feature_importance=True)
-_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features, test_labels=test_labels, instance_importance=True, feature_importance=True)
+_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features, test_labels=test_labels, instance_importance=True, feature_importance=False)
 
 # +
 # Get the current day and time to attach to the saved model's name
