@@ -37,8 +37,7 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import shap                      # Model-agnostic interpretability package inspired on Shapley values
 import pickle                    # Save python objects in files
 from datetime import datetime    # datetime to use proper date and time formats
-import utils                     # Contains auxiliary functions
-from Time_Series_Dataset import Time_Series_Dataset # Dataset subclass which allows the creation of Dataset objects
+import data_utils as du          # Data science and machine learning relevant methods
 from ModelInterpreter import ModelInterpreter # Class that enables the interpretation of models that handle variable sequence length input data
 # -
 
@@ -84,10 +83,7 @@ def configure_plotly_browser_state():
 # -
 
 # Set random seed to the specified value
-np.random.seed(utils.random_seed)
-torch.manual_seed(utils.random_seed)
-# np.random.set_state(utils.random_seed)
-# torch.manual_seed(utils.random_seed[1][0])
+du.set_random_seed(42)
 
 # Sequence and instance identifier columns' numbers
 id_column = 0
@@ -127,8 +123,8 @@ for unused_feature in ['subject_id', 'ts', 'niv_label']:
 ALS_cols
 
 # Load the model with the best validation performance
-model = utils.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_07_06_2019_23_14.pth')
-
+model = du.deep_learning.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_07_06_2019_23_14.pth',
+                                         ModelClass)
 model
 
 # ## Getting train and test sets, in tensor format
@@ -143,7 +139,7 @@ n_inputs = len(ALS_df.columns)               # Number of input features
 padding_value = 0                            # Value to be used in the padding
 
 # Pad data (to have fixed sequence length) and convert into a PyTorch tensor
-data = utils.dataframe_to_padded_tensor(ALS_df, seq_len_dict, n_patients, n_inputs, padding_value=padding_value)
+data = du.padding.dataframe_to_padded_tensor(ALS_df, seq_len_dict, padding_value=padding_value)
 # -
 
 # Create a Dataset object from the data tensor
@@ -151,9 +147,9 @@ dataset = Time_Series_Dataset(data, ALS_df)
 
 # Get the train, validation and test sets data loaders and indices
 train_dataloader, val_dataloader, test_dataloader, \
-train_indices, val_indices, test_indices            = utils.create_train_sets(dataset, test_train_ratio=0.2, 
-                                                                              validation_ratio=0.1, 
-                                                                              batch_size=1000, get_indeces=True)
+train_indices, val_indices, test_indices            = du.machine_learning.create_train_sets(dataset, test_train_ratio=0.2,
+                                                                                            validation_ratio=0.1,
+                                                                                            batch_size=1000, get_indeces=True)
 
 # Get the tensor data of the training and test sets
 train_features, train_labels = next(iter(train_dataloader))
@@ -168,7 +164,7 @@ test_features_denorm = utils.denormalize_data(orig_ALS_df, test_features, see_pr
 
 # ## Confirm performance metrics
 
-output, metrics_vals = utils.model_inference(model, seq_len_dict, dataloader=test_dataloader, 
+output, metrics_vals = utils.model_inference(model, seq_len_dict, dataloader=test_dataloader,
                        metrics=['loss', 'accuracy', 'AUC', 'precision', 'recall', 'F1'], output_rounded=True)
 
 metrics_vals
@@ -187,7 +183,7 @@ explainer = shap.DeepExplainer(model, train_features[:n_bkgnd_samples, :, 2:].fl
 start_time = time.time()
 # Explain the predictions of the first n_samples patients in the test set
 n_samples = 10
-shap_values = explainer.shap_values(test_features[:n_samples, :, 2:].float(), 
+shap_values = explainer.shap_values(test_features[:n_samples, :, 2:].float(),
                                     feedforward_args=[x_lengths_train[:n_bkgnd_samples], x_lengths_test[:n_samples]],
                                     var_seq_len=True)
 print(f'Calculation of SHAP values took {time.time() - start_time} seconds')
@@ -278,13 +274,13 @@ explainer = shap.KernelExplainer(kf.f, bkgnd_data, isRNN=True, model_obj=model, 
 feat_scores = explainer.shap_values(test_data, l1_reg='num_features(10)', nsamples=3000)
 
 # Summarize the effects of all the features
-shap.summary_plot(feat_scores.reshape(-1, model.lstm.input_size), 
-                  features=test_features_denorm[:, :, 2:].view(-1, model.lstm.input_size).numpy(), 
+shap.summary_plot(feat_scores.reshape(-1, model.lstm.input_size),
+                  features=test_features_denorm[:, :, 2:].view(-1, model.lstm.input_size).numpy(),
                   feature_names=ALS_cols, plot_type='bar')
 
 # Summarize the effects of all the features
-shap.summary_plot(interpreter.feat_scores.reshape(-1, model.lstm.input_size), 
-                  features=test_features_denorm[:, :interpreter.feat_scores.shape[1], 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy(), 
+shap.summary_plot(interpreter.feat_scores.reshape(-1, model.lstm.input_size),
+                  features=test_features_denorm[:, :interpreter.feat_scores.shape[1], 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy(),
                   feature_names=ALS_cols, plot_type='violin')
 
 # Choosing which example to use
@@ -300,9 +296,9 @@ shap.initjs()
 seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
 
 # Plot the explanation of the predictions for one patient
-shap.force_plot(interpreter.explainer.expected_value[0], 
-                interpreter.feat_scores[patient, :seq_len], 
-                features=test_features_denorm[patient, :seq_len, 2:].numpy(), 
+shap.force_plot(interpreter.explainer.expected_value[0],
+                interpreter.feat_scores[patient, :seq_len],
+                features=test_features_denorm[patient, :seq_len, 2:].numpy(),
                 feature_names=ALS_cols)
 # + {}
 # Init the JS visualization code
@@ -312,9 +308,9 @@ shap.initjs()
 ts = 9
 
 # Plot the explanation of one prediction
-shap.force_plot(interpreter.explainer.expected_value[0], 
-                interpreter.feat_scores[patient][ts], 
-                features=test_features_denorm[patient, ts, 2:].numpy(), 
+shap.force_plot(interpreter.explainer.expected_value[0],
+                interpreter.feat_scores[patient][ts],
+                features=test_features_denorm[patient, ts, 2:].numpy(),
                 feature_names=ALS_cols)
 # -
 # ## Model Interpreter
@@ -365,8 +361,8 @@ interpreter = interpreter_loaded
 interpreter.feat_scores
 
 # Summarize the effects of all the features
-shap.summary_plot(interpreter.feat_scores.reshape(-1, interpreter.model.lstm.input_size), 
-                  features=test_features_denorm[:, :, 2:].view(-1, interpreter.model.lstm.input_size).numpy(), 
+shap.summary_plot(interpreter.feat_scores.reshape(-1, interpreter.model.lstm.input_size),
+                  features=test_features_denorm[:, :, 2:].view(-1, interpreter.model.lstm.input_size).numpy(),
                   feature_names=ALS_cols, plot_type='bar')
 
 interpreter.feat_scores.reshape(-1, model.lstm.input_size).shape
@@ -374,8 +370,8 @@ interpreter.feat_scores.reshape(-1, model.lstm.input_size).shape
 test_features_denorm[:, :, 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy().shape
 
 # Summarize the effects of all the features
-shap.summary_plot(interpreter.feat_scores.reshape(-1, model.lstm.input_size), 
-                  features=test_features_denorm[:, :interpreter.feat_scores.shape[1], 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy(), 
+shap.summary_plot(interpreter.feat_scores.reshape(-1, model.lstm.input_size),
+                  features=test_features_denorm[:, :interpreter.feat_scores.shape[1], 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy(),
                   feature_names=ALS_cols, plot_type='violin')
 
 # **Comments:**
@@ -395,9 +391,9 @@ shap.initjs()
 seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
 
 # Plot the explanation of the predictions for one patient
-shap.force_plot(interpreter.explainer.expected_value[0], 
-                interpreter.feat_scores[patient, :seq_len], 
-                features=test_features_denorm[patient, :seq_len, 2:].numpy(), 
+shap.force_plot(interpreter.explainer.expected_value[0],
+                interpreter.feat_scores[patient, :seq_len],
+                features=test_features_denorm[patient, :seq_len, 2:].numpy(),
                 feature_names=ALS_cols)
 # + {}
 # Init the JS visualization code
@@ -407,9 +403,9 @@ shap.initjs()
 ts = 9
 
 # Plot the explanation of one prediction
-shap.force_plot(interpreter.explainer.expected_value[0], 
-                interpreter.feat_scores[patient][ts], 
-                features=test_features_denorm[patient, ts, 2:].numpy(), 
+shap.force_plot(interpreter.explainer.expected_value[0],
+                interpreter.feat_scores[patient][ts],
+                features=test_features_denorm[patient, ts, 2:].numpy(),
                 feature_names=ALS_cols)
 # -
 # **Comments:**
@@ -483,5 +479,3 @@ test_features[:n_patients].shape
 interpreter.inst_scores.shape
 
 interpreter.instance_importance_plot(test_features[:n_patients], interpreter.inst_scores[:n_patients], pred_prob=pred_prob)
-
-

@@ -2,16 +2,17 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_json: true
 #     formats: ipynb,py:light
 #     text_representation:
 #       extension: .py
 #       format_name: light
-#       format_version: '1.4'
-#       jupytext_version: 1.1.3
+#       format_version: '1.5'
+#       jupytext_version: 1.4.1
 #   kernelspec:
-#     display_name: fcul-als-python
+#     display_name: fcul_als_disease_progression
 #     language: python
-#     name: fcul-als-python
+#     name: fcul_als_disease_progression
 # ---
 
 # # FCUL ALS Data Cleaning
@@ -21,7 +22,7 @@
 #
 # The main goal of this notebook is to prepare a single CSV document that contains all the relevant data to be used when training a machine learning model that predicts disease progression, filtering useless columns and performing imputation.
 
-# + {"colab_type": "text", "id": "KOdmFzXqF7nq", "cell_type": "markdown"}
+# + [markdown] {"colab_type": "text", "id": "KOdmFzXqF7nq"}
 # ## Importing the necessary packages
 
 # + {"colab": {}, "colab_type": "code", "id": "G5RrWE9R_Nkl"}
@@ -36,43 +37,15 @@ from tqdm import tqdm_notebook   # tqdm allows to track code execution progress
 import numbers                   # numbers allows to check if data is numeric
 import torch                     # PyTorch to create and apply deep learning models
 from torch.utils.data.sampler import SubsetRandomSampler
-import utils                     # Contains auxiliary functions
+import data_utils as du          # Data science and machine learning relevant methods
+# -
 
-# +
+import pixiedust                 # Debugging in Jupyter Notebook cells
+
 # Change to parent directory (presumably "Documents")
-os.chdir("../..")
-
+os.chdir("../../..")
 # Path to the CSV dataset files
 data_path = 'Datasets/Thesis/FCUL_ALS/'
-
-# + {"colab_type": "text", "id": "bEqFkmlYCGOz", "cell_type": "markdown"}
-# **Important:** Use the following two lines to be able to do plotly plots offline:
-
-# + {"colab": {}, "colab_type": "code", "id": "fZCUmUOzCPeI"}
-import plotly.offline as py
-plotly.offline.init_notebook_mode(connected=True)
-
-
-# + {"colab_type": "text", "id": "Yrzi8YbzDVTH", "cell_type": "markdown"}
-# **Important:** The following function is needed in every Google Colab cell that contains a Plotly chart:
-
-# + {"colab": {}, "colab_type": "code", "id": "wxyGCedgC6bX"}
-def configure_plotly_browser_state():
-    import IPython
-    display(IPython.core.display.HTML('''
-        <script src="/static/components/requirejs/require.js"></script>
-        <script>
-          requirejs.config({
-            paths: {
-              base: '/static/base',
-              plotly: 'https://cdn.plot.ly/plotly-latest.min.js?noext',
-            },
-          });
-        </script>
-        '''))
-
-
-# -
 
 # ## Reading the data
 
@@ -84,24 +57,44 @@ ALS_proc_df.head()
 ALS_proc_df.rename(columns={'REF': 'subject_id'}, inplace=True)
 ALS_proc_df.head()
 
+# ## Creating a timestamp column
+#
+# Using `medianDate`, we can define a column that serves as the timestamp, which indicates how many days have gone by since the patient's first data sample.
+
+# Convert column `medianDate` to a datetime format:
+
+ALS_proc_df.medianDate = pd.to_datetime(ALS_proc_df.medianDate, format='%d/%m/%Y')
+ALS_proc_df.medianDate
+
+# Get the difference in days between the samples:
+
+ALS_proc_df.medianDate = ALS_proc_df.groupby('subject_id').medianDate.diff()
+ALS_proc_df.medianDate
+
+# Convert to a numeric format and replace the missing values (which are the first sample in each time series) with 0:
+
+ALS_proc_df.medianDate = ALS_proc_df.medianDate / np.timedelta64(1, 'D')
+ALS_proc_df.medianDate = ALS_proc_df.medianDate.fillna(0)
+ALS_proc_df.medianDate
+
+# Rename to `ts`:
+
+ALS_proc_df.rename(columns={'medianDate': 'ts'}, inplace=True)
+ALS_proc_df.head()
+
+ALS_proc_df.ts.describe()
+
 # ## Deleting unused columns
 #
-# Removing kind of useless columns ('NIV_DATE', 'firstDate', 'lastDate', 'medianDate'), ones with too many missing values ('SNIP', 'CervicalFlex', 'CervicalExt') and ones that would give away the labels ('ALS-FRS', 'ALS-FRS-R', 'ALS-FRSb', 'ALS-FRSsUL', 'ALS-FRSsLL', 'ALS-FRSr').
+# Removing kind of useless columns ('NIV_DATE', 'firstDate', 'lastDate'), ones with too many missing values ('SNIP', 'CervicalFlex', 'CervicalExt') and ones that would give away the labels ('ALS-FRS', 'ALS-FRS-R', 'ALS-FRSb', 'ALS-FRSsUL', 'ALS-FRSsLL', 'ALS-FRSr').
 
 ALS_proc_df.columns
 
-ALS_proc_df.drop(columns=['NIV_DATE', 'firstDate', 'lastDate', 'medianDate', 
-                          'SNIP', 'CervicalFlex', 'CervicalExt', 'ALS-FRS', 
-                          'ALS-FRS-R', 'ALS-FRSb', 'ALS-FRSsUL', 'ALS-FRSsLL', 
-                          'ALS-FRSr'], inplace=True)
+ALS_proc_df.drop(columns=['NIV_DATE', 'firstDate', 'lastDate', 'SNIP', 
+                          'CervicalFlex', 'CervicalExt', 'ALS-FRS',
+                          'ALS-FRS-R', 'ALS-FRSb', 'ALS-FRSsUL', 
+                          'ALS-FRSsLL', 'ALS-FRSr'], inplace=True)
 ALS_proc_df.head()
-
-# ## Getting discrete timestamps
-#
-# Creating a index for each patient that serves as a discrete timestamp, starting at 0 in their first clinical visit and ending at the length of their time series (-1).
-
-ALS_proc_df['ts'] = ALS_proc_df.groupby('subject_id').cumcount()
-ALS_proc_df.head(10)
 
 # ## Removing patients with only one clinical visit
 #
@@ -125,23 +118,36 @@ ALS_proc_df.groupby('subject_id').ts.count().min()
 #
 # Combining redundant values and one hot encoding categorical features.
 
-# Making "Gender" a proper one hot encoded column
+# Making "Gender" a proper one hot encoded column:
+
 ALS_proc_df['Gender'] = ALS_proc_df['Gender'] - 1
 
-# Fixing a bug in the "1R" column
+# Fixing a bug in the `1R` column:
+
 ALS_proc_df['1R'] = ALS_proc_df['1R'].replace(to_replace='\\1', value=1).astype('float64')
 
-ALS_proc_df = utils.one_hot_encoding_dataframe(ALS_proc_df, columns=['El Escorial reviewed criteria',
+du.search_explore.dataframe_missing_values(ALS_proc_df)
+
+# One hot encode the remaining categorical columns:
+
+# + {"pixiedust": {"displayParams": {}}}
+ALS_proc_df = du.data_processing.one_hot_encoding_dataframe(ALS_proc_df,
+                                                            columns=['El Escorial reviewed criteria',
                                                                      'Onset form',
                                                                      'UMN vs LMN',
-                                                                     'C9orf72'])
+                                                                     'C9orf72'],
+                                                            join_rows=True,
+                                                            join_by=['subject_id', 'ts'],
+                                                            lower_case=True, 
+                                                            has_nan=True,
+                                                            inplace=True)
 ALS_proc_df.head()
+# -
 
 # Reduxing the UMN vs LMN columns into just 2 clear columns:
 
 ALS_proc_df.rename(columns={'UMN vs LMN_lmn': 'LMN',
-                            'UMN vs LMN_umn': 'UMN',
-                            'UMN vs LMN_nan': 'UMN_vs_LMN_unknown'}, inplace=True)
+                            'UMN vs LMN_umn': 'UMN'}, inplace=True)
 ALS_proc_df.head()
 
 # Activate both UMN and LMN features if the "both" value is 1
@@ -157,6 +163,16 @@ len(ALS_proc_df[(ALS_proc_df.UMN == 1) & (ALS_proc_df.LMN == 1)])
 
 # **Comment:** The previous length matches the number found on the value counts of the original dataframe, corresponding to the value "both".
 
+# Remove the redundant `C9orf72_no` column:
+
+ALS_proc_df.columns
+
+ALS_proc_df.drop(columns='C9orf72_no', inplace=True)
+ALS_proc_df.head()
+
+ALS_proc_df.rename(columns={'C9orf72_yes': 'C9orf72'}, inplace=True)
+ALS_proc_df.head()
+
 # ## Standardize all column names to be lower case and without spaces
 
 ALS_proc_df.columns = [col.lower().replace(' ', '_').replace('-', '_') for col in ALS_proc_df.columns]
@@ -169,9 +185,49 @@ ALS_proc_df.head()
 
 ALS_proc_df['niv_label'] = ALS_proc_df['niv']
 
-ALS_proc_df[['subject_id', 'ts', 'niv', 'niv_label']].head(20)
 
-ALS_proc_df['niv_label'] = ALS_proc_df.groupby('subject_id')['niv_label'].shift(-1)
+# Find the timestamp for each patient when they first start using NIV:
+
+# +
+# niv_start = dict()
+# for patient in ALS_proc_df.subject_id.unique():
+#     try:
+#         niv_start[patient] = ALS_proc_df[(ALS_proc_df.subject_id == patient) & (ALS_proc_df.niv == 1)].head(1).ts.item()
+#     except ValueError:
+#         niv_start[patient] = np.inf
+#     except Exception as e:
+#         raise e
+
+# +
+# niv_start
+
+# +
+# ALS_proc_df['niv_start'] = 0
+# for patient in ALS_proc_df.subject_id.unique():
+#     ALS_proc_df.loc[ALS_proc_df.subject_id == patient, 'niv_start'] = niv_start[patient]
+# ALS_proc_df.head()
+# -
+
+def set_niv_label_in_row(df, time_window_days=90):
+    global ALS_proc_df
+    # Get a list of all the timestamps in the current patient's time series
+    patient_ts_list = ALS_proc_df[ALS_proc_df.subject_id == df.subject_id].ts
+    # Find the closest timestamp to that of the current one + the desired time window
+    closest_ts = min(subject_ts_list, key=lambda x: abs(x-(df.ts+time_window_days)))
+    # Confirm that this closest value isn't after the time window
+    if closest_ts > df.ts+time_window_days:
+        closest_ts = subject_ts_list[subject_ts_list <= closest_ts].to_numpy()[-2]
+    # Check if the patient is on NIV in this observed future
+    return ALS_proc_df[(ALS_proc_df.subject_id == df.subject_id) & (ALS_proc_df.ts == closest_ts)].niv == 1
+
+
+ALS_proc_df[['subject_id', 'ts', 'niv', 'niv_start', 'niv_label']].head(20)
+
+# + {"pixiedust": {"displayParams": {}}}
+# # %%pixie_debugger
+# [TODO] I need to fix this
+ALS_proc_df['niv_label'] = ALS_proc_df.apply(set_niv_label_in_row, axis=1)
+# -
 
 ALS_proc_df[['subject_id', 'ts', 'niv', 'niv_label']].head(20)
 
@@ -184,7 +240,7 @@ ALS_proc_df.describe().transpose()
 #
 # Continuous data is normalized into z-scores, where 0 represents the mean and an absolute value of 1 corresponds to the standard deviation.
 
-ALS_proc_df = utils.normalize_data(ALS_proc_df)
+ALS_proc_df = du.data_processing.normalize_data(ALS_proc_df, id_columns=['subject_id', 'ts'])
 ALS_proc_df.head()
 
 
@@ -193,6 +249,11 @@ ALS_proc_df.describe().transpose()
 # ## Imputation and removal of incomplete data
 #
 # Starting from a last information carried forward technique, the data is initially forward filled. Next, a backward fill is done, as current data of the patient should still be a good indicator of the recent past. Finally, the remaining missing values are filled with zeroes, as it represents the average value of each given feature.
+
+ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'niv_label']].head(20)
+
+ALS_proc_df = du.data_processing.missing_values_imputation(ALS_proc_df, id_column='subject_id')
+ALS_proc_df.head()
 
 ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'niv_label']].head(20)
 
@@ -210,6 +271,8 @@ ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'ni
 ALS_proc_df = ALS_proc_df.fillna(value=0)
 
 ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'niv_label']].head(20)
+
+# ## Saving the data
 
 ALS_proc_df.to_csv(f'{data_path}cleaned/FCUL_ALS_cleaned.csv')
 

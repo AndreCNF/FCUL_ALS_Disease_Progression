@@ -2,16 +2,17 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_json: true
 #     formats: ipynb,py:light
 #     text_representation:
 #       extension: .py
 #       format_name: light
-#       format_version: '1.4'
-#       jupytext_version: 1.1.3
+#       format_version: '1.5'
+#       jupytext_version: 1.4.1
 #   kernelspec:
-#     display_name: fcul-als-python
+#     display_name: fcul_als_disease_progression
 #     language: python
-#     name: fcul-als-python
+#     name: fcul_als_disease_progression
 # ---
 
 # # FCUL ALS Data Exploration
@@ -21,38 +22,28 @@
 #
 # Amyotrophic lateral sclerosis, or ALS (also known in the US as Lou Gehrig’s Disease and as Motor Neuron Disease in the UK) is a disease that involves the degeneration and death of the nerve cells in the brain and spinal cord that control voluntary muscle movement. Death typically occurs within 3 - 5 years of diagnosis. Only about 25% of patients survive for more than 5 years after diagnosis.
 
-# + {"colab_type": "text", "id": "KOdmFzXqF7nq", "cell_type": "markdown"}
+# + [markdown] {"colab_type": "text", "id": "KOdmFzXqF7nq"}
 # ## Importing the necessary packages
 
 # + {"colab": {}, "colab_type": "code", "id": "G5RrWE9R_Nkl"}
-import pandas as pd              # Pandas to handle the data in dataframes
-import re                        # re to do regex searches in string data
-import plotly                    # Plotly for interactive and pretty plots
+import pandas as pd                        # Pandas to handle the data in dataframes
+import re                                  # re to do regex searches in string data
+import plotly                              # Plotly for interactive and pretty plots
 import plotly.graph_objs as go
-from datetime import datetime    # datetime to use proper date and time formats
-import os                        # os handles directory/workspace changes
-import numpy as np               # NumPy to handle numeric and NaN operations
-from tqdm import tqdm_notebook   # tqdm allows to track code execution progress
-import numbers                   # numbers allows to check if data is numeric
-import torch                     # PyTorch to create and apply deep learning models
+from datetime import datetime              # datetime to use proper date and time formats
+import os                                  # os handles directory/workspace changes
+import numpy as np                         # NumPy to handle numeric and NaN operations
+from tqdm import tqdm_notebook             # tqdm allows to track code execution progress
+import numbers                             # numbers allows to check if data is numeric
+import torch                               # PyTorch to create and apply deep learning models
 from torch.utils.data.sampler import SubsetRandomSampler
-import utils                     # Contains auxiliary functions
-
-# +
-# Change to parent directory (presumably "Documents")
-os.chdir("../..")
-
-# Path to the CSV dataset files
-data_path = 'Datasets/Thesis/FCUL_ALS/'
-
-# + {"colab_type": "text", "id": "bEqFkmlYCGOz", "cell_type": "markdown"}
-# **Important:** Use the following two lines to be able to do plotly plots offline:
-
-# + {"colab": {}, "colab_type": "code", "id": "fZCUmUOzCPeI"}
-import plotly.offline as py
-plotly.offline.init_notebook_mode(connected=True)
+import data_utils as du                    # Data science and machine learning relevant methods
 # -
 
+# Change to parent directory (presumably "Documents")
+os.chdir("../..")
+# Path to the CSV dataset files
+data_path = 'Datasets/Thesis/FCUL_ALS/'
 # ## Exploring the preprocessed dataset
 
 # ### Basic stats
@@ -64,9 +55,9 @@ ALS_proc_df.dtypes
 
 ALS_proc_df.nunique()
 
-utils.dataframe_missing_values(ALS_proc_df)
+du.search_explore.dataframe_missing_values(ALS_proc_df)
 
-# **Comment:** Many relevant features (timestamps, NIV, age, ALSFRS, etc) have zero or low missing values percentage (bellow 10%), much better than in the PRO-ACT dataset. However, there other interesting ones with more than half missing values (FVC, VC, etc).
+# **Comment:** Many relevant features (timestamps, NIV, age, ALSFRS, etc) have zero or low missing values percentage (bellow 10%), much better than in the PRO-ACT dataset. However, there are other interesting ones with more than half missing values (FVC, VC, etc).
 
 ALS_proc_df.describe().transpose()
 
@@ -84,34 +75,22 @@ ALS_proc_df['1R'].value_counts()
 
 # ### Plots
 
-# +
-configure_plotly_browser_state()
-
-ALS_proc_gender_count = ALS_proc_df.Gender.value_counts().to_frame()
+ALS_proc_gender_count = ALS_proc_df.groupby('REF').first().Gender.value_counts().to_frame()
 data = [go.Pie(labels=ALS_proc_gender_count.index, values=ALS_proc_gender_count.Gender)]
 layout = go.Layout(title='Patients Gender Demographics')
 fig = go.Figure(data, layout)
-py.iplot(fig)
-
-# +
-configure_plotly_browser_state()
+fig.show()
 
 ALS_proc_niv_count = ALS_proc_df.NIV.value_counts().to_frame()
 data = [go.Pie(labels=ALS_proc_niv_count.index, values=ALS_proc_niv_count.NIV)]
 layout = go.Layout(title='Visits where the patient is using NIV')
 fig = go.Figure(data, layout)
-py.iplot(fig)
-
-# +
-configure_plotly_browser_state()
+fig.show()
 
 data = [go.Histogram(x = ALS_proc_df.NIV)]
 layout = go.Layout(title='Number of visits where the patient is using NIV.')
 fig = go.Figure(data, layout)
-py.iplot(fig)
-
-# +
-configure_plotly_browser_state()
+fig.show()
 
 data = [go.Scatter(
                     x = ALS_proc_df.FVC,
@@ -124,16 +103,12 @@ layout = go.Layout(
                     yaxis=dict(title='NIV')
                   )
 fig = go.Figure(data, layout)
-py.iplot(fig)
-# -
+fig.show()
 
 # Average FVC value when NIV is used:
 ALS_proc_df[ALS_proc_df.NIV == 1].FVC.mean()
 
 # **Comments:** The average FVC when NIV is 1 is lower than average, but the scatter plot doesn't show a very clear dependence between the variables.
-
-# +
-configure_plotly_browser_state()
 
 data = [go.Scatter(
                     x = ALS_proc_df['Disease duration'],
@@ -146,14 +121,10 @@ layout = go.Layout(
                     yaxis=dict(title='NIV')
                   )
 fig = go.Figure(data, layout)
-py.iplot(fig)
-# -
+fig.show()
 
 # Average disease duration when NIV is used:
 ALS_proc_df[ALS_proc_df.NIV == 1]['Disease duration'].mean()
-
-# +
-configure_plotly_browser_state()
 
 data = [go.Scatter(
                     x = ALS_proc_df['Age at onset'],
@@ -166,14 +137,10 @@ layout = go.Layout(
                     yaxis=dict(title='NIV')
                   )
 fig = go.Figure(data, layout)
-py.iplot(fig)
-# -
+fig.show()
 
 # Average age at onset when NIV is used:
 ALS_proc_df[ALS_proc_df.NIV == 1]['Age at onset'].mean()
-
-# +
-configure_plotly_browser_state()
 
 ALS_proc_NIV_3R = ALS_proc_df.groupby(['3R', 'NIV']).REF.count().to_frame().reset_index()
 data = [go.Bar(
@@ -188,8 +155,7 @@ data = [go.Bar(
         )]
 layout = go.Layout(barmode='group')
 fig = go.Figure(data=data, layout=layout)
-py.iplot(fig, filename='grouped-bar')
-# -
+fig.show()
 
 # Average 3R value when NIV is used:
 ALS_proc_df[ALS_proc_df.NIV == 1]['3R'].mean()
