@@ -198,6 +198,8 @@ ALS_proc_df.head()
 
 ALS_proc_df['niv_label'] = ALS_proc_df['niv']
 
+ALS_proc_df.head().niv.max()
+
 
 def set_niv_label_in_row(df, time_window_days=90):
     global ALS_proc_df
@@ -211,8 +213,21 @@ def set_niv_label_in_row(df, time_window_days=90):
         # Just use the data from the subject's last sample if there are no 
         # samples in the desired time window for this subject
         closest_ts = subject_ts_list.iloc[-1]
-    # Check if the patient is on NIV in this observed future
-    return ALS_proc_df[(ALS_proc_df.subject_id == df.subject_id) & (ALS_proc_df.ts == closest_ts)].niv.item() == 1
+    # Check if the patient has been on NIV anytime during the defined time window
+    if closest_ts > df.ts+time_window_days:
+        time_window_data = ALS_proc_df[(ALS_proc_df.subject_id == df.subject_id) 
+                                       & (ALS_proc_df.ts < closest_ts)
+                                       & (ALS_proc_df.ts > df.ts)]
+    else:
+        time_window_data = ALS_proc_df[(ALS_proc_df.subject_id == df.subject_id) 
+                                       & (ALS_proc_df.ts <= closest_ts)
+                                       & (ALS_proc_df.ts > df.ts)]
+    if time_window_data.empty:
+        # Just use the last NIV indication when it's the last sample in the subject's
+        # time series or there are no other samples in the specified time window
+        time_window_data = ALS_proc_df[(ALS_proc_df.subject_id == df.subject_id) 
+                                       & (ALS_proc_df.ts == df.ts)]
+    return time_window_data.niv.max() == 1
 
 
 ALS_proc_df[['subject_id', 'ts', 'niv', 'niv_label']].head(20)
