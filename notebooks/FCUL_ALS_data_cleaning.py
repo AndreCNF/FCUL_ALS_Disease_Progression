@@ -47,6 +47,17 @@ os.chdir("../../..")
 # Path to the CSV dataset files
 data_path = 'Datasets/Thesis/FCUL_ALS/'
 
+du.set_pandas_library(lib='pandas')
+
+# Allow pandas to show more columns:
+
+pd.set_option('display.max_columns', 3000)
+pd.set_option('display.max_rows', 3000)
+
+# Set the random seed for reproducibility:
+
+du.set_random_seed(42)
+
 # ## Reading the data
 
 ALS_proc_df = pd.read_csv(f'{data_path}dataWithoutDunnoNIV.csv')
@@ -113,6 +124,8 @@ for patient in ALS_proc_df.subject_id.unique():
 ALS_proc_df.subject_id.nunique()
 
 ALS_proc_df.groupby('subject_id').ts.count().min()
+
+ALS_proc_df.groupby('subject_id').ts.count().describe()
 
 # ## Cleaning categorical columns
 #
@@ -186,50 +199,29 @@ ALS_proc_df.head()
 ALS_proc_df['niv_label'] = ALS_proc_df['niv']
 
 
-# Find the timestamp for each patient when they first start using NIV:
-
-# +
-# niv_start = dict()
-# for patient in ALS_proc_df.subject_id.unique():
-#     try:
-#         niv_start[patient] = ALS_proc_df[(ALS_proc_df.subject_id == patient) & (ALS_proc_df.niv == 1)].head(1).ts.item()
-#     except ValueError:
-#         niv_start[patient] = np.inf
-#     except Exception as e:
-#         raise e
-
-# +
-# niv_start
-
-# +
-# ALS_proc_df['niv_start'] = 0
-# for patient in ALS_proc_df.subject_id.unique():
-#     ALS_proc_df.loc[ALS_proc_df.subject_id == patient, 'niv_start'] = niv_start[patient]
-# ALS_proc_df.head()
-# -
-
 def set_niv_label_in_row(df, time_window_days=90):
     global ALS_proc_df
     # Get a list of all the timestamps in the current patient's time series
-    patient_ts_list = ALS_proc_df[ALS_proc_df.subject_id == df.subject_id].ts
-    # Find the closest timestamp to that of the current one + the desired time window
-    closest_ts = min(subject_ts_list, key=lambda x: abs(x-(df.ts+time_window_days)))
-    # Confirm that this closest value isn't after the time window
-    if closest_ts > df.ts+time_window_days:
-        closest_ts = subject_ts_list[subject_ts_list <= closest_ts].to_numpy()[-2]
+    subject_ts_list = ALS_proc_df[ALS_proc_df.subject_id == df.subject_id].ts
+    try:
+        # Try to find the timestamp of a sample that is equal or bigger than 
+        # the current one + the desired time window
+        closest_ts = subject_ts_list[subject_ts_list >= df.ts+time_window_days].iloc[0]
+    except IndexError:
+        # Just use the data from the subject's last sample if there are no 
+        # samples in the desired time window for this subject
+        closest_ts = subject_ts_list.iloc[-1]
     # Check if the patient is on NIV in this observed future
-    return ALS_proc_df[(ALS_proc_df.subject_id == df.subject_id) & (ALS_proc_df.ts == closest_ts)].niv == 1
+    return ALS_proc_df[(ALS_proc_df.subject_id == df.subject_id) & (ALS_proc_df.ts == closest_ts)].niv.item() == 1
 
 
-ALS_proc_df[['subject_id', 'ts', 'niv', 'niv_start', 'niv_label']].head(20)
+ALS_proc_df[['subject_id', 'ts', 'niv', 'niv_label']].head(20)
 
 # + {"pixiedust": {"displayParams": {}}}
-# # %%pixie_debugger
-# [TODO] I need to fix this
 ALS_proc_df['niv_label'] = ALS_proc_df.apply(set_niv_label_in_row, axis=1)
 # -
 
-ALS_proc_df[['subject_id', 'ts', 'niv', 'niv_label']].head(20)
+ALS_proc_df[['subject_id', 'ts', 'niv', 'niv_label']].head(200)
 
 # Save a version of the dataframe without normalization
 ALS_proc_df.to_csv(f'{data_path}cleaned/FCUL_ALS_cleaned_denorm.csv')
@@ -252,23 +244,8 @@ ALS_proc_df.describe().transpose()
 
 ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'niv_label']].head(20)
 
-ALS_proc_df = du.data_processing.missing_values_imputation(ALS_proc_df, id_column='subject_id')
+ALS_proc_df = du.data_processing.missing_values_imputation(ALS_proc_df, method='zigzag', id_column='subject_id')
 ALS_proc_df.head()
-
-ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'niv_label']].head(20)
-
-# Forward fill each patient's data
-ALS_proc_df = ALS_proc_df.set_index('subject_id', append=True).groupby('subject_id').fillna(method='ffill').reset_index(level=1)
-
-ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'niv_label']].head(20)
-
-# Backward fill each patient's data
-ALS_proc_df = ALS_proc_df.set_index('subject_id', append=True).groupby('subject_id').fillna(method='bfill').reset_index(level=1)
-
-ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'niv_label']].head(20)
-
-# Fill remaining missing values with 0, as they represent that feature's average value
-ALS_proc_df = ALS_proc_df.fillna(value=0)
 
 ALS_proc_df[['subject_id', 'ts', 'r', 'p1', 'p2', 'bmi', 'fvc', 'vc', 'mip', 'niv_label']].head(20)
 
