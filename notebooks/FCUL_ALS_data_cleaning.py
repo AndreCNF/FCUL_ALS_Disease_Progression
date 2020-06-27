@@ -58,6 +58,10 @@ pd.set_option('display.max_rows', 3000)
 
 du.set_random_seed(42)
 
+# ## Setting the initial parameters
+
+time_window_days = 90            # How many days into the future will we predict the use of NIV
+
 # ## Reading the data
 
 ALS_proc_df = pd.read_csv(f'{data_path}dataWithoutDunnoNIV.csv')
@@ -107,17 +111,18 @@ ALS_proc_df.drop(columns=['NIV_DATE', 'firstDate', 'lastDate', 'SNIP',
                           'ALS-FRSsLL', 'ALS-FRSr'], inplace=True)
 ALS_proc_df.head()
 
-# ## Removing patients with only one clinical visit
+# ## Removing patients without enough samples to predict one time window
 #
-# Since we want to predict the use of NIV in the next clinical visit, it doesn't make any sense to include patients with only one data point.
+# Since we want to predict the use of NIV in the next 90 days (time window), it doesn't make any sense to include patients that don't have samples that represent at least 90 days.
 
 ALS_proc_df.subject_id.nunique()
 
 ALS_proc_df.groupby('subject_id').ts.count().min()
 
 for patient in ALS_proc_df.subject_id.unique():
+    subject_data = ALS_proc_df[ALS_proc_df.subject_id == patient]
     # Check if the current patient only has one clinical visit
-    if len(ALS_proc_df[ALS_proc_df.subject_id == patient]) == 1:
+    if subject_data.ts.max() - subject_data.ts.min() < time_window_days:
         # Remove patient's data from the dataframe
         ALS_proc_df = ALS_proc_df[ALS_proc_df.subject_id != patient]
 
