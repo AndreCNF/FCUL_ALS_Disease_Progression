@@ -9,6 +9,7 @@ __pycache__/NeuralNetwork.cpython-37.pyc
 __pycache__/utils.cpython-37.pyc
 .ipynb_checkpoints/*
 notebooks/.ipynb_checkpoints/*
+scripts/.ipynb_checkpoints/*
 *.pyc
 .DS_Store
 .vscode/launch.json
