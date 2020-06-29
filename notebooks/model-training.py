@@ -122,9 +122,9 @@ metrics = ['loss', 'accuracy', 'AUC']
 ALS_df = pd.read_csv(f'{data_path}FCUL_ALS_cleaned.csv')
 ALS_df.head()
 
-# Remove the `Unnamed: 0` and `niv` columns:
+# Remove the `Unnamed: 0` column:
 
-ALS_df.drop(columns=['Unnamed: 0', 'niv'], inplace=True)
+ALS_df.drop(columns=['Unnamed: 0'], inplace=True)
 
 ALS_df.columns
 
@@ -142,7 +142,12 @@ total_length
 if time_window_days is not 90:
     # Recalculate the NIV label, based on the chosen time window
     ALS_df[label_column] = utils.set_niv_label(ALS_df, time_window_days)
+    display(ALS_df.head())
 
+
+# Remove the `niv` column:
+
+ALS_df.drop(columns=['niv'], inplace=True)
 
 # Add the `delta_ts` (time variation between samples) if required:
 
@@ -196,13 +201,8 @@ else:
         for ohe_feature in list(categ_feat_ohe.values())[0]:
             # Find the current feature's index so as to be able to use it as a tensor
             feature_idx = du.search_explore.find_col_idx(ALS_df, ohe_feature)
-            # Decrease the index number if it's larger than the ID and/or timestamp 
-            # and/or label columns (which will be removed)
-#             if feature_idx > id_column_idx and dataset_mode == 'learn embedding':
-#                 feature_idx = feature_idx - 1
-#             if feature_idx > ts_column_idx and dataset_mode == 'learn embedding':
-#                 feature_idx = feature_idx - 1
-            if feature_idx > label_column_idx and dataset_mode == 'learn embedding':
+            # Decrease the index number if it's larger than the label column (which will be removed)
+            if feature_idx > label_column_idx:
                 feature_idx = feature_idx - 1
             embed_features.append(feature_idx)
         # Each one hot encoded column counts as a category to be embedded + missing values
@@ -214,13 +214,8 @@ else:
             for ohe_feature in list(categ_feat_ohe.values())[i]:
                 # Find the current feature's index so as to be able to use it as a tensor
                 feature_idx = du.search_explore.find_col_idx(ALS_df, ohe_feature)
-                # Decrease the index number if it's larger than the ID and/or timestamp 
-                # and/or label columns (which will be removed)
-#                 if feature_idx > id_column_idx and dataset_mode == 'learn embedding':
-#                     feature_idx = feature_idx - 1
-#                 if feature_idx > ts_column_idx and dataset_mode == 'learn embedding':
-#                     feature_idx = feature_idx - 1
-                if feature_idx > label_column_idx and dataset_mode == 'learn embedding':
+                # Decrease the index number if it's larger than the label column (which will be removed)
+                if feature_idx > label_column_idx:
                     feature_idx = feature_idx - 1
                 tmp_list.append(feature_idx)
             # Add the current feature's list of one hot encoded columns
@@ -237,14 +232,15 @@ if dataset_mode == 'pre-embedded':
     pretrained_model_name = input('Name of the model file that has the embedding layer:')
     pretrained_model_type = input('Type of the model that has the embedding layer:')
     # Load the model with the pre-trained embedding layer
-    pretrained_model = du.deep_learning.load_checkpoint(filepath=f'{models_path}{pretrained_model_name}', 
+    pretrained_model = du.deep_learning.load_checkpoint(filepath=f'{project_path}models/{pretrained_model_name}', 
                                                         ModelClass=getattr(Models, pretrained_model_type.replace('-', '')))
-    embed_layers = pretrained_model.embed_layers
-    # Apply the embedding
-    data = du.embedding.embedding_bag_pipeline(data, embed_layers,
-                                               embed_features,
-                                               inplace=True)
-    data
+    pretrained_embed_layers = pretrained_model.embed_layers
+    print(
+f'''
+Pre-trained model: {pretrained_model}
+Pre-trained embedding layer: {pretrained_embed_layers}
+'''
+    )
 
 # ## Defining the dataset object
 
@@ -330,6 +326,15 @@ model = Models.VanillaRNN(n_inputs, n_hidden, n_outputs, n_layers, p_dropout,
                           embedding_dim=embedding_dim, bidir=bidir, 
                           total_length=total_length)
 model
+
+# Add the frozen, pre-trained embedding layer (if required):
+
+if dataset_mode == 'pre-embedded':
+    # Replace the embedding layer with the pre-trained one
+    model.embed_layers = pretrained_embed_layers
+    # Freeze the pre-trained embedding layer (i.e. stop it from being trained / changed)
+    for param in model.embed_layers.parameters():
+        param.requires_grad = False
 
 # Define the name that will be given to the models that will be saved:
 
@@ -417,6 +422,15 @@ model = Models.VanillaLSTM(n_inputs, n_hidden, n_outputs, n_layers, p_dropout,
                            total_length=total_length)
 model
 
+# Add the frozen, pre-trained embedding layer (if required):
+
+if dataset_mode == 'pre-embedded':
+    # Replace the embedding layer with the pre-trained one
+    model.embed_layers = pretrained_embed_layers
+    # Freeze the pre-trained embedding layer (i.e. stop it from being trained / changed)
+    for param in model.embed_layers.parameters():
+        param.requires_grad = False
+
 # Define the name that will be given to the models that will be saved:
 
 model_name = 'lstm'
@@ -503,6 +517,15 @@ model = Models.TLSTM(n_inputs, n_hidden, n_outputs, n_rnn_layers, p_dropout,
                      embedding_dim=embedding_dim, elapsed_time=elapsed_time)
 model
 
+# Add the frozen, pre-trained embedding layer (if required):
+
+if dataset_mode == 'pre-embedded':
+    # Replace the embedding layer with the pre-trained one
+    model.embed_layers = pretrained_embed_layers
+    # Freeze the pre-trained embedding layer (i.e. stop it from being trained / changed)
+    for param in model.embed_layers.parameters():
+        param.requires_grad = False
+
 # Define the name that will be given to the models that will be saved:
 
 model_name = 'tlstm'
@@ -588,6 +611,15 @@ model = Models.MF1LSTM(n_inputs, n_hidden, n_outputs, n_rnn_layers, p_dropout,
                        embedding_dim=embedding_dim, elapsed_time=elapsed_time)
 model
 
+# Add the frozen, pre-trained embedding layer (if required):
+
+if dataset_mode == 'pre-embedded':
+    # Replace the embedding layer with the pre-trained one
+    model.embed_layers = pretrained_embed_layers
+    # Freeze the pre-trained embedding layer (i.e. stop it from being trained / changed)
+    for param in model.embed_layers.parameters():
+        param.requires_grad = False
+
 # Define the name that will be given to the models that will be saved:
 
 model_name = 'mf1lstm'
@@ -672,6 +704,15 @@ model = Models.MF2LSTM(n_inputs, n_hidden, n_outputs, n_rnn_layers, p_dropout,
                        embed_features=embed_features, n_embeddings=n_embeddings,
                        embedding_dim=embedding_dim, elapsed_time=elapsed_time)
 model
+
+# Add the frozen, pre-trained embedding layer (if required):
+
+if dataset_mode == 'pre-embedded':
+    # Replace the embedding layer with the pre-trained one
+    model.embed_layers = pretrained_embed_layers
+    # Freeze the pre-trained embedding layer (i.e. stop it from being trained / changed)
+    for param in model.embed_layers.parameters():
+        param.requires_grad = False
 
 # Define the name that will be given to the models that will be saved:
 
