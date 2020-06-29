@@ -29,7 +29,7 @@ class BaseRNN(nn.Module):
             Number of RNN layers.
         p_dropout : float or int, default 0
             Probability of dropout.
-        embed_features : list of ints or list of lists of ints, default None
+        embed_features : list of ints or list of list of ints, default None
             List of features (refered to by their indices) that need to go
             through embedding layers. One list of one hot encoded feature per
             embedding layer must be set.
@@ -91,28 +91,34 @@ class BaseRNN(nn.Module):
                         if self.n_embeddings[i] != len(self.embed_features[i])+1:
                             raise Exception(f'ERROR: The number of embeddings `n_embeddings` must equal the length of its corresponding embedding features `embed_features` + 1 (missing values). The provided `n_embeddings` is {self.n_embeddings[i]} while `embed_features` has length {len(self.embed_features[i])}, in embedding features set {i}.')
             if all([isinstance(feature, int) for feature in self.embed_features]):
-                if embedding_dim is None:
+                if self.embedding_dim is None:
                     # Calculate a reasonable embedding dimension for the
                     # current feature; the formula sets a minimum embedding
                     # dimension of 3, with above values being calculated as
                     # the rounded up base 5 logarithm of the number of
                     # embeddings.
-                    embedding_dim = max(3, int(math.ceil(math.log(self.n_embeddings, base=5))))
+                    self.embedding_dim = max(3, int(math.ceil(math.log(self.n_embeddings, 5))))
                 # Create a single embedding layer
-                self.embed_layers = nn.EmbeddingBag(self.n_embeddings, embedding_dim)
+                self.embed_layers = nn.EmbeddingBag(self.n_embeddings, self.embedding_dim)
             elif (all([isinstance(feat_list, list) for feat_list in self.embed_features])
             and all([isinstance(feature, int) for feat_list in self.embed_features
                      for feature in feat_list])):
                 # Create a modules list of embedding bag layers
                 self.embed_layers = nn.ModuleList()
+                if self.embedding_dim is None:
+                    self.embedding_dim = list()
+                    none_embedding_dim = True
+                else:
+                    none_embedding_dim = False
                 for i in range(len(self.embed_features)):
-                    if embedding_dim is None:
+                    if none_embedding_dim is True:
                         # Calculate a reasonable embedding dimension for the
                         # current feature; the formula sets a minimum embedding
                         # dimension of 3, with above values being calculated as
                         # the rounded up base 5 logarithm of the number of
                         # embeddings.
-                        embedding_dim_i = max(3, int(math.ceil(math.log(self.n_embeddings[i], base=5))))
+                        embedding_dim_i = max(3, int(math.ceil(math.log(self.n_embeddings[i], 5))))
+                        self.embedding_dim.append(embedding_dim_i)
                     else:
                         embedding_dim_i = self.embedding_dim[i]
                     # Create an embedding layer for the current feature
@@ -288,7 +294,7 @@ class VanillaRNN(nn.Module):
             Number of RNN layers.
         p_dropout : float or int, default 0
             Probability of dropout.
-        embed_features : list of ints, default None
+        embed_features : list of ints or list of list of ints, default None
             List of features (refered to by their indices) that need to go
             through embedding layers.
         n_embeddings : list of ints, default None
@@ -336,8 +342,6 @@ class VanillaRNN(nn.Module):
                 else:
                     raise Exception(f'ERROR: The embedding features must be indicated in `embed_features` as either a single, integer index or a list of indices. The provided argument has type {type(embed_features)}.')
             else:
-                if isinstance(self.n_embeddings, int):
-                    self.n_embeddings = [self.n_embeddings]
                 if all([isinstance(feature, int) for feature in self.embed_features]):
                     if self.n_embeddings != len(self.embed_features)+1:
                         raise Exception(f'ERROR: The number of embeddings `n_embeddings` must equal the length of its corresponding embedding features `embed_features` + 1 (missing values). The provided `n_embeddings` is {self.n_embeddings} while `embed_features` has length {len(self.embed_features)}.')
@@ -350,28 +354,34 @@ class VanillaRNN(nn.Module):
                         if self.n_embeddings[i] != len(self.embed_features[i])+1:
                             raise Exception(f'ERROR: The number of embeddings `n_embeddings` must equal the length of its corresponding embedding features `embed_features` + 1 (missing values). The provided `n_embeddings` is {self.n_embeddings[i]} while `embed_features` has length {len(self.embed_features[i])}, in embedding features set {i}.')
             if all([isinstance(feature, int) for feature in self.embed_features]):
-                if embedding_dim is None:
+                if self.embedding_dim is None:
                     # Calculate a reasonable embedding dimension for the
                     # current feature; the formula sets a minimum embedding
                     # dimension of 3, with above values being calculated as
                     # the rounded up base 5 logarithm of the number of
                     # embeddings.
-                    embedding_dim = max(3, int(math.ceil(math.log(self.n_embeddings, base=5))))
+                    self.embedding_dim = max(3, int(math.ceil(math.log(self.n_embeddings, 5))))
                 # Create a single embedding layer
-                self.embed_layers = nn.EmbeddingBag(self.n_embeddings, embedding_dim)
+                self.embed_layers = nn.EmbeddingBag(self.n_embeddings, self.embedding_dim)
             elif (all([isinstance(feat_list, list) for feat_list in self.embed_features])
             and all([isinstance(feature, int) for feat_list in self.embed_features
                      for feature in feat_list])):
                 # Create a modules list of embedding bag layers
                 self.embed_layers = nn.ModuleList()
+                if self.embedding_dim is None:
+                    self.embedding_dim = list()
+                    none_embedding_dim = True
+                else:
+                    none_embedding_dim = False
                 for i in range(len(self.embed_features)):
-                    if embedding_dim is None:
+                    if none_embedding_dim is True:
                         # Calculate a reasonable embedding dimension for the
                         # current feature; the formula sets a minimum embedding
                         # dimension of 3, with above values being calculated as
                         # the rounded up base 5 logarithm of the number of
                         # embeddings.
-                        embedding_dim_i = max(3, int(math.ceil(math.log(self.n_embeddings[i], base=5))))
+                        embedding_dim_i = max(3, int(math.ceil(math.log(self.n_embeddings[i], 5))))
+                        self.embedding_dim.append(embedding_dim_i)
                     else:
                         embedding_dim_i = self.embedding_dim[i]
                     # Create an embedding layer for the current feature
@@ -507,7 +517,7 @@ class VanillaLSTM(nn.Module):
             Number of LSTM layers.
         p_dropout : float or int, default 0
             Probability of dropout.
-        embed_features : list of ints, default None
+        embed_features : list of ints or list of list of ints, default None
             List of features (refered to by their indices) that need to go
             through embedding layers.
         n_embeddings : list of ints, default None
@@ -555,8 +565,6 @@ class VanillaLSTM(nn.Module):
                 else:
                     raise Exception(f'ERROR: The embedding features must be indicated in `embed_features` as either a single, integer index or a list of indices. The provided argument has type {type(embed_features)}.')
             else:
-                if isinstance(self.n_embeddings, int):
-                    self.n_embeddings = [self.n_embeddings]
                 if all([isinstance(feature, int) for feature in self.embed_features]):
                     if self.n_embeddings != len(self.embed_features)+1:
                         raise Exception(f'ERROR: The number of embeddings `n_embeddings` must equal the length of its corresponding embedding features `embed_features` + 1 (missing values). The provided `n_embeddings` is {self.n_embeddings} while `embed_features` has length {len(self.embed_features)}.')
@@ -569,13 +577,13 @@ class VanillaLSTM(nn.Module):
                         if self.n_embeddings[i] != len(self.embed_features[i])+1:
                             raise Exception(f'ERROR: The number of embeddings `n_embeddings` must equal the length of its corresponding embedding features `embed_features` + 1 (missing values). The provided `n_embeddings` is {self.n_embeddings[i]} while `embed_features` has length {len(self.embed_features[i])}, in embedding features set {i}.')
             if all([isinstance(feature, int) for feature in self.embed_features]):
-                if embedding_dim is None:
+                if self.embedding_dim is None:
                     # Calculate a reasonable embedding dimension for the
                     # current feature; the formula sets a minimum embedding
                     # dimension of 3, with above values being calculated as
                     # the rounded up base 5 logarithm of the number of
                     # embeddings.
-                    embedding_dim = max(3, int(math.ceil(math.log(self.n_embeddings, base=5))))
+                    self.embedding_dim = max(3, int(math.ceil(math.log(self.n_embeddings, 5))))
                 # Create a single embedding layer
                 self.embed_layers = nn.EmbeddingBag(self.n_embeddings, embedding_dim)
             elif (all([isinstance(feat_list, list) for feat_list in self.embed_features])
@@ -583,14 +591,20 @@ class VanillaLSTM(nn.Module):
                      for feature in feat_list])):
                 # Create a modules list of embedding bag layers
                 self.embed_layers = nn.ModuleList()
+                if self.embedding_dim is None:
+                    self.embedding_dim = list()
+                    none_embedding_dim = True
+                else:
+                    none_embedding_dim = False
                 for i in range(len(self.embed_features)):
-                    if embedding_dim is None:
+                    if none_embedding_dim is True:
                         # Calculate a reasonable embedding dimension for the
                         # current feature; the formula sets a minimum embedding
                         # dimension of 3, with above values being calculated as
                         # the rounded up base 5 logarithm of the number of
                         # embeddings.
-                        embedding_dim_i = max(3, int(math.ceil(math.log(self.n_embeddings[i], base=5))))
+                        embedding_dim_i = max(3, int(math.ceil(math.log(self.n_embeddings[i], 5))))
+                        self.embedding_dim.append(embedding_dim_i)
                     else:
                         embedding_dim_i = self.embedding_dim[i]
                     # Create an embedding layer for the current feature

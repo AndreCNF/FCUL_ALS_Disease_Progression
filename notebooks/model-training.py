@@ -9,7 +9,7 @@
 import os                                  # os handles directory/workspace changes
 import comet_ml                            # Comet.ml can log training metrics, parameters, do version control and parameter optimization
 import torch                               # PyTorch to create and apply deep learning models
-import xgboost as xgb                      # Gradient boosting trees models
+# import xgboost as xgb                      # Gradient boosting trees models
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, f1_score, log_loss, roc_auc_score
@@ -23,17 +23,16 @@ from ipywidgets import interact            # Display selectors and sliders
 import pixiedust                           # Debugging in Jupyter Notebook cells
 
 # Path to the parquet dataset files
-data_path = 'data/eICU/cleaned/'
+data_path = 'Datasets/Thesis/FCUL_ALS/cleaned/'
 # Path to the code files
-project_path = 'code/eICU-mortality-prediction/'
+project_path = 'GitHub/FCUL_ALS_Disease_Progression/'
 
 # Change to the scripts directory
 os.chdir("../scripts/")
-import utils                               # Context specific (in this case, for the eICU data) methods
+import utils                               # Context specific (in this case, for the ALS data) methods
 import Models                              # Deep learning models
 # Change to parent directory (presumably "Documents")
 os.chdir("../../..")
-# import modin.pandas as pd                  # Optimized distributed version of Pandas
 import pandas as pd                        # Pandas to load and handle the data
 import data_utils as du                    # Data science and machine learning relevant methods
 
@@ -61,101 +60,217 @@ comet_ml_api_key = getpass.getpass('Comet ML API key')
 dataset_mode = None                        # The mode in which we'll use the data, either one hot encoded or pre-embedded
 ml_core = None                             # The core machine learning type we'll use; either traditional ML or DL
 use_delta_ts = None                        # Indicates if we'll use time variation info
-time_window_h = None                       # Number of hours on which we want to predict mortality
+time_window_days = None                    # Number of days on which we want to predict NIV
 already_embedded = None                    # Indicates if categorical features are already embedded when fetching a batch
 @interact
 def get_dataset_mode(data_mode=['one hot encoded', 'learn embedding', 'pre-embedded'],
                      ml_or_dl=['deep learning', 'machine learning'],
-                     use_delta=[False, 'normalized', 'raw'], window_h=(0, 96, 24)):
-    global dataset_mode, ml_core, use_delta_ts, time_window_h, already_embedded
-    dataset_mode, ml_core, use_delta_ts, time_window_h = data_mode, ml_or_dl, use_delta, window_h
+                     use_delta=[False, 'normalized', 'raw'], window_d=(0, 90, 30)):
+    global dataset_mode, ml_core, use_delta_ts, time_window_days, already_embedded
+    dataset_mode, ml_core, use_delta_ts, time_window_days = data_mode, ml_or_dl, use_delta, window_d
     already_embedded = dataset_mode == 'embedded'
 
 
-id_column = 'patientunitstayid'            # Name of the sequence ID column
+id_column = 'subject_id'                   # Name of the sequence ID column
 ts_column = 'ts'                           # Name of the timestamp column
-label_column = 'label'                     # Name of the label column
-n_inputs = 2090                            # Number of input features
+label_column = 'niv_label'                 # Name of the label column
+n_inputs = 46                              # Number of input features
 n_outputs = 1                              # Number of outputs
 padding_value = 999999                     # Padding value used to fill in sequences up to the maximum sequence length
 
 # Data types:
 
-stream_dtypes = open(f'{data_path}eICU_dtype_dict.yml', 'r')
+# +
+# stream_dtypes = open(f'{data_path}eICU_dtype_dict.yml', 'r')
 
-dtype_dict = yaml.load(stream_dtypes, Loader=yaml.FullLoader)
-dtype_dict
+# +
+# dtype_dict = yaml.load(stream_dtypes, Loader=yaml.FullLoader)
+# dtype_dict
+# -
 
 # One hot encoding columns categorization:
 
-stream_cat_feat_ohe = open(f'{data_path}eICU_cat_feat_ohe.yml', 'r')
+stream_categ_feat_ohe = open(f'{data_path}categ_feat_ohe.yml', 'r')
 
-cat_feat_ohe = yaml.load(stream_cat_feat_ohe, Loader=yaml.FullLoader)
-cat_feat_ohe
+categ_feat_ohe = yaml.load(stream_categ_feat_ohe, Loader=yaml.FullLoader)
+categ_feat_ohe
 
-list(cat_feat_ohe.keys())
+list(categ_feat_ohe.keys())
 
 # Training parameters:
 
-# test_train_ratio = 0.25                    # Percentage of the data which will be used as a test set
-# validation_ratio = 0.1                     # Percentage of the data from the training set which is used for validation purposes
+test_train_ratio = 0.25                    # Percentage of the data which will be used as a test set
+validation_ratio = 0.1                     # Percentage of the data from the training set which is used for validation purposes
 batch_size = 32                            # Number of unit stays in a mini batch
-n_epochs = 10                              # Number of epochs
+n_epochs = 20                              # Number of epochs
 lr = 0.001                                 # Learning rate
+num_workers = 0                            # How many subprocesses to use for data loading
+embedding_dim = None                       # List of embedding dimensions
 
-stream_tvt_sets = open(f'{data_path}eICU_tvt_sets.yml', 'r')
-eICU_tvt_sets = yaml.load(stream_tvt_sets, Loader=yaml.FullLoader)
-eICU_tvt_sets
+# +
+# stream_tvt_sets = open(f'{data_path}eICU_tvt_sets.yml', 'r')
+# eICU_tvt_sets = yaml.load(stream_tvt_sets, Loader=yaml.FullLoader)
+# eICU_tvt_sets
+# -
 
 # Testing parameters:
 
-metrics = ['loss', 'accuracy', 'AUC', 'AUC_weighted']
+metrics = ['loss', 'accuracy', 'AUC']
 
-# ## Defining the dataset object
+# ## Loading the data
 
-cat_feat_ohe
+ALS_df = pd.read_csv(f'{data_path}FCUL_ALS_cleaned.csv')
+ALS_df.head()
 
-[feat_list for feat_list in cat_feat_ohe.values()]
+# Remove the `Unnamed: 0` and `niv` columns:
 
-[[col for col in feat_list] for feat_list in [feat_list for feat_list in cat_feat_ohe.values()]]
+ALS_df.drop(columns=['Unnamed: 0', 'niv'], inplace=True)
 
-dataset = du.datasets.Large_Dataset(files_name='eICU', process_pipeline=utils.eICU_process_pipeline,
-                                    id_column=id_column, initial_analysis=utils.eICU_initial_analysis,
-                                    files_path=data_path, dataset_mode=dataset_mode, ml_core=ml_core,
-                                    use_delta_ts=use_delta_ts, time_window_h=time_window_h,
-                                    padding_value=padding_value, cat_feat_ohe=cat_feat_ohe, dtype_dict=dtype_dict)
+ALS_df.columns
 
-# Make sure that we discard the ID, timestamp and label columns
-if n_inputs != dataset.n_inputs:
-    n_inputs = dataset.n_inputs
-    print(f'Changed the number of inputs to {n_inputs}')
-else:
-    n_inputs
+len(ALS_df.columns)
 
-if dataset_mode == 'learn embedding':
-    embed_features = dataset.embed_features
-    n_embeddings = dataset.n_embeddings
-else:
+# Find the maximum sequence length, so that the ML models and their related methods can handle all sequences, which have varying sequence lengths:
+
+total_length = ALS_df.groupby(id_column)[ts_column].count().max()
+total_length
+
+# ## Preprocessing data
+
+# Define the label column, in case we're using a time window different than 90 days:
+
+if time_window_days is not 90:
+    # Recalculate the NIV label, based on the chosen time window
+    ALS_df[label_column] = utils.set_niv_label(ALS_df, time_window_days)
+
+
+# Add the `delta_ts` (time variation between samples) if required:
+
+if use_delta_ts is not False:
+    # Create a time variation column
+    ALS_df['delta_ts'] = ALS_df.groupby(id_column).ts.diff()
+    # Fill all the delta_ts missing values (the first value in a time series) with zeros
+    ALS_df['delta_ts'] = ALS_df['delta_ts'].fillna(0)
+if use_delta_ts == 'normalized':
+    # Normalize the time variation data
+    # NOTE: When using the MF2-LSTM model, since it assumes that the time
+    # variation is in days, we shouldn't normalize `delta_ts` with this model.
+    ALS_df['delta_ts'] = (ALS_df['delta_ts'] - ALS_df['delta_ts'].mean()) / ALS_df['delta_ts'].std()
+if use_delta_ts is not False:
+    display(ALS_df.head())
+
+# Convert into a padded tensor:
+
+data = du.padding.dataframe_to_padded_tensor(ALS_df, padding_value=padding_value, 
+                                             label_column=label_column, inplace=True)
+data
+
+# Set the embedding configuration, if needed:
+
+len(categ_feat_ohe.keys())
+
+len(categ_feat_ohe.values())
+
+list(categ_feat_ohe.values())[0]
+
+for feature in list(categ_feat_ohe.values())[0]:
+    print(du.search_explore.find_col_idx(ALS_df, feature))
+
+# Indices of the ID, timestamp and label columns
+id_column_idx = du.search_explore.find_col_idx(ALS_df, id_column)
+ts_column_idx = du.search_explore.find_col_idx(ALS_df, ts_column)
+label_column_idx = du.search_explore.find_col_idx(ALS_df, label_column)
+print(
+f'''ID index: {id_column_idx}
+Timestamp index: {ts_column_idx}
+Label index: {label_column_idx}'''
+)
+
+if dataset_mode == 'one hot encoded':
     embed_features = None
     n_embeddings = None
+    embedding_dim = None
+else:
+    embed_features = list()
+    if len(categ_feat_ohe.keys()) == 1:
+        for ohe_feature in list(categ_feat_ohe.values())[0]:
+            # Find the current feature's index so as to be able to use it as a tensor
+            feature_idx = du.search_explore.find_col_idx(ALS_df, ohe_feature)
+            # Decrease the index number if it's larger than the ID and/or timestamp 
+            # and/or label columns (which will be removed)
+#             if feature_idx > id_column_idx and dataset_mode == 'learn embedding':
+#                 feature_idx = feature_idx - 1
+#             if feature_idx > ts_column_idx and dataset_mode == 'learn embedding':
+#                 feature_idx = feature_idx - 1
+            if feature_idx > label_column_idx and dataset_mode == 'learn embedding':
+                feature_idx = feature_idx - 1
+            embed_features.append(feature_idx)
+        # Each one hot encoded column counts as a category to be embedded + missing values
+        n_embeddings = len(embed_features)+1
+    else:
+        n_embeddings = list()
+        for i in range(len(categ_feat_ohe.keys())):
+            tmp_list = list()
+            for ohe_feature in list(categ_feat_ohe.values())[i]:
+                # Find the current feature's index so as to be able to use it as a tensor
+                feature_idx = du.search_explore.find_col_idx(ALS_df, ohe_feature)
+                # Decrease the index number if it's larger than the ID and/or timestamp 
+                # and/or label columns (which will be removed)
+#                 if feature_idx > id_column_idx and dataset_mode == 'learn embedding':
+#                     feature_idx = feature_idx - 1
+#                 if feature_idx > ts_column_idx and dataset_mode == 'learn embedding':
+#                     feature_idx = feature_idx - 1
+                if feature_idx > label_column_idx and dataset_mode == 'learn embedding':
+                    feature_idx = feature_idx - 1
+                tmp_list.append(feature_idx)
+            # Add the current feature's list of one hot encoded columns
+            embed_features.append(tmp_list)
+            # Each one hot encoded column counts as a category to be embedded + missing values
+            n_embeddings.append(len(tmp_list)+1)
+    embedding_dim = None
 print(f'Embedding features: {embed_features}')
 print(f'Number of embeddings: {n_embeddings}')
 
-dataset.__len__()
+# Apply the pre-trained embedding layer, if required:
 
-dataset.bool_feat
+if dataset_mode == 'pre-embedded':
+    pretrained_model_name = input('Name of the model file that has the embedding layer:')
+    pretrained_model_type = input('Type of the model that has the embedding layer:')
+    # Load the model with the pre-trained embedding layer
+    pretrained_model = du.deep_learning.load_checkpoint(filepath=f'{models_path}{pretrained_model_name}', 
+                                                        ModelClass=getattr(Models, pretrained_model_type.replace('-', '')))
+    embed_layers = pretrained_model.embed_layers
+    # Apply the embedding
+    data = du.embedding.embedding_bag_pipeline(data, embed_layers,
+                                               embed_features,
+                                               inplace=True)
+    data
+
+# ## Defining the dataset object
+
+dataset = du.datasets.Time_Series_Dataset(ALS_df, data, padding_value=padding_value, 
+                                          label_name=label_column)
+
+# +
+# Make sure that we discard the ID, timestamp and label columns
+# if n_inputs != dataset.n_inputs:
+#     n_inputs = dataset.n_inputs
+#     print(f'Changed the number of inputs to {n_inputs}')
+# else:
+#     n_inputs
+# -
+
+dataset.__len__()
 
 # ## Separating into train and validation sets
 
 (train_dataloader, val_dataloader, test_dataloader,
 train_indeces, val_indeces, test_indeces) = du.machine_learning.create_train_sets(dataset,
-#                                                                                   test_train_ratio=test_train_ratio,
-#                                                                                   validation_ratio=validation_ratio,
-                                                                                  train_indices=eICU_tvt_sets['train_indices'],
-                                                                                  val_indices=eICU_tvt_sets['val_indices'],
-                                                                                  test_indices=eICU_tvt_sets['test_indices'],
+                                                                                  test_train_ratio=test_train_ratio,
+                                                                                  validation_ratio=validation_ratio,
                                                                                   batch_size=batch_size,
-                                                                                  get_indeces=True)
+                                                                                  num_workers=num_workers,
+                                                                                  get_indices=True)
 
 if ml_core == 'deep learning':
     # Ignore the indeces, we only care about the dataloaders when using neural networks
@@ -197,14 +312,14 @@ next(iter(test_dataloader))[0].shape
 
 # Model parameters:
 
-n_hidden = 100                             # Number of hidden units
-n_layers = 2                               # Number of LSTM layers
+n_hidden = 1052                            # Number of hidden units
+n_layers = 3                               # Number of LSTM layers
 p_dropout = 0.2                            # Probability of dropout
 bidir = False                              # Sets if the RNN layer is bidirectional or not
 
 if use_delta_ts == 'normalized':
     # Count the delta_ts column as another feature, only ignore ID, timestamp and label columns
-    n_inputs = dataset.n_inputs + 1
+    n_inputs = n_inputs + 1
 elif use_delta_ts == 'raw':
     raise Exception('ERROR: When using a model of type Vanilla RNN, we can\'t use raw delta_ts. Please either normalize it (use_delta_ts = "normalized") or discard it (use_delta_ts = False).')
 
@@ -212,7 +327,8 @@ elif use_delta_ts == 'raw':
 
 model = Models.VanillaRNN(n_inputs, n_hidden, n_outputs, n_layers, p_dropout,
                           embed_features=embed_features, n_embeddings=n_embeddings,
-                          embedding_dim=embedding_dim, bidir=bidir)
+                          embedding_dim=embedding_dim, bidir=bidir, 
+                          total_length=total_length)
 model
 
 # Define the name that will be given to the models that will be saved:
@@ -226,6 +342,7 @@ elif dataset_mode == 'one hot encoded':
     model_name = model_name + '_one_hot_encoded'
 if use_delta_ts is not False:
     model_name = model_name + '_delta_ts'
+model_name = model_name + f'_{time_window_days}dayswindow'
 model_name
 
 # #### Training and testing the model
@@ -259,7 +376,7 @@ val_loss_min, exp_name_min = du.machine_learning.optimize_hyperparameters(Models
                                                                           inst_column=ts_column,
                                                                           id_columns_idx=[0, 1],
                                                                           n_outputs=n_outputs, model_type='multivariate_rnn',
-                                                                          is_custom=False, models_path='models/',
+                                                                          is_custom=False, models_path=f'{project_path}models/',
                                                                           model_name=model_name,
                                                                           array_param='embedding_dim',
                                                                           metrics=metrics,
@@ -270,7 +387,8 @@ val_loss_min, exp_name_min = du.machine_learning.optimize_hyperparameters(Models
                                                                           lr=lr,
                                                                           comet_ml_save_model=True,
                                                                           embed_features=embed_features,
-                                                                          n_embeddings=n_embeddings)
+                                                                          n_embeddings=n_embeddings, 
+                                                                          total_length=total_length)
 
 exp_name_min
 
@@ -280,14 +398,14 @@ exp_name_min
 
 # Model parameters:
 
-n_hidden = 100                             # Number of hidden units
-n_layers = 2                               # Number of LSTM layers
+n_hidden = 1052                            # Number of hidden units
+n_layers = 3                               # Number of LSTM layers
 p_dropout = 0.2                            # Probability of dropout
 bidir = False                              # Sets if the RNN layer is bidirectional or not
 
 if use_delta_ts == 'normalized':
     # Count the delta_ts column as another feature, only ignore ID, timestamp and label columns
-    n_inputs = dataset.n_inputs + 1
+    n_inputs = n_inputs + 1
 elif use_delta_ts == 'raw':
     raise Exception('ERROR: When using a model of type Vanilla RNN, we can\'t use raw delta_ts. Please either normalize it (use_delta_ts = "normalized") or discard it (use_delta_ts = False).')
 
@@ -295,7 +413,8 @@ elif use_delta_ts == 'raw':
 
 model = Models.VanillaLSTM(n_inputs, n_hidden, n_outputs, n_layers, p_dropout,
                            embed_features=embed_features, n_embeddings=n_embeddings,
-                           embedding_dim=embedding_dim, bidir=bidir)
+                           embedding_dim=embedding_dim, bidir=bidir, 
+                           total_length=total_length)
 model
 
 # Define the name that will be given to the models that will be saved:
@@ -309,6 +428,7 @@ elif dataset_mode == 'one hot encoded':
     model_name = model_name + '_one_hot_encoded'
 if use_delta_ts is not False:
     model_name = model_name + '_delta_ts'
+model_name = model_name + f'_{time_window_days}dayswindow'
 model_name
 
 # #### Training and testing the model
@@ -342,7 +462,7 @@ val_loss_min, exp_name_min = du.machine_learning.optimize_hyperparameters(Models
                                                                           inst_column=ts_column,
                                                                           id_columns_idx=[0, 1],
                                                                           n_outputs=n_outputs, model_type='multivariate_rnn',
-                                                                          is_custom=False, models_path='models/',
+                                                                          is_custom=False, models_path=f'{project_path}models/',
                                                                           model_name=model_name,
                                                                           array_param='embedding_dim',
                                                                           metrics=metrics,
@@ -353,7 +473,8 @@ val_loss_min, exp_name_min = du.machine_learning.optimize_hyperparameters(Models
                                                                           lr=lr,
                                                                           comet_ml_save_model=True,
                                                                           embed_features=embed_features,
-                                                                          n_embeddings=n_embeddings)
+                                                                          n_embeddings=n_embeddings, 
+                                                                          total_length=total_length)
 
 exp_name_min
 
@@ -365,8 +486,8 @@ exp_name_min
 
 # Model parameters:
 
-n_hidden = 100                             # Number of hidden units
-n_rnn_layers = 2                           # Number of TLSTM layers
+n_hidden = 1052                            # Number of hidden units
+n_rnn_layers = 3                           # Number of TLSTM layers
 p_dropout = 0.2                            # Probability of dropout
 elapsed_time = 'small'                     # Indicates if the elapsed time between events is small or long; influences how to discount elapsed time
 
@@ -393,6 +514,7 @@ elif dataset_mode == 'one hot encoded':
     model_name = model_name + '_one_hot_encoded'
 if use_delta_ts is not False:
     model_name = model_name + '_delta_ts'
+model_name = model_name + f'_{time_window_days}dayswindow'
 model_name
 
 # #### Training and testing the model
@@ -426,7 +548,7 @@ val_loss_min, exp_name_min = du.machine_learning.optimize_hyperparameters(Models
                                                                           inst_column=ts_column,
                                                                           id_columns_idx=[0, 1],
                                                                           n_outputs=n_outputs, model_type='multivariate_rnn',
-                                                                          is_custom=True, models_path='models/',
+                                                                          is_custom=True, models_path=f'{project_path}models/',
                                                                           model_name=model_name,
                                                                           array_param='embedding_dim',
                                                                           metrics=metrics,
@@ -477,6 +599,7 @@ elif dataset_mode == 'one hot encoded':
     model_name = model_name + '_one_hot_encoded'
 if use_delta_ts is not False:
     model_name = model_name + '_delta_ts'
+model_name = model_name + f'_{time_window_days}dayswindow'
 model_name
 
 # #### Training and testing the model
@@ -510,7 +633,7 @@ val_loss_min, exp_name_min = du.machine_learning.optimize_hyperparameters(Models
                                                                           inst_column=ts_column,
                                                                           id_columns_idx=[0, 1],
                                                                           n_outputs=n_outputs, model_type='multivariate_rnn',
-                                                                          is_custom=True, models_path='models/',
+                                                                          is_custom=True, models_path=f'{project_path}models/',
                                                                           model_name=model_name,
                                                                           array_param='embedding_dim',
                                                                           metrics=metrics,
@@ -561,6 +684,7 @@ elif dataset_mode == 'one hot encoded':
     model_name = model_name + '_one_hot_encoded'
 if use_delta_ts is not False:
     model_name = model_name + '_delta_ts'
+model_name = model_name + f'_{time_window_days}dayswindow'
 model_name
 
 # #### Training and testing the model
@@ -594,7 +718,7 @@ val_loss_min, exp_name_min = du.machine_learning.optimize_hyperparameters(Models
                                                                           inst_column=ts_column,
                                                                           id_columns_idx=[0, 1],
                                                                           n_outputs=n_outputs, model_type='multivariate_rnn',
-                                                                          is_custom=True, models_path='models/',
+                                                                          is_custom=True, models_path=f'{project_path}models/',
                                                                           model_name=model_name,
                                                                           array_param='embedding_dim',
                                                                           metrics=metrics,

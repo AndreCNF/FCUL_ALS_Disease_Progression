@@ -128,17 +128,23 @@ ALS_df.groupby('subject_id').ts.count().min()
 
 ALS_df.groupby('subject_id').ts.count().describe()
 
+# ## Standardize all column names to be lower case and without spaces
+
+ALS_df.columns = [col.lower().replace(' ', '_').replace('-', '_') for col in ALS_df.columns]
+
+ALS_df.head()
+
 # ## Cleaning categorical columns
 #
 # Combining redundant values and one hot encoding categorical features.
 
 # Making "Gender" a proper one hot encoded column:
 
-ALS_df['Gender'] = ALS_df['Gender'] - 1
+ALS_df['gender'] = ALS_df['gender'] - 1
 
 # Fixing a bug in the `1R` column:
 
-ALS_df['1R'] = ALS_df['1R'].replace(to_replace='\\1', value=1).astype('float64')
+ALS_df['1r'] = ALS_df['1r'].replace(to_replace='\\1', value=1).astype('float64')
 
 du.search_explore.dataframe_missing_values(ALS_df)
 
@@ -146,10 +152,10 @@ du.search_explore.dataframe_missing_values(ALS_df)
 
 # + {"pixiedust": {"displayParams": {}}}
 ALS_df, new_columns = du.data_processing.one_hot_encoding_dataframe(ALS_df,
-                                                                         columns=['El Escorial reviewed criteria',
-                                                                                  'Onset form',
-                                                                                  'UMN vs LMN',
-                                                                                  'C9orf72'],
+                                                                         columns=['el_escorial_reviewed_criteria',
+                                                                                  'onset_form',
+                                                                                  'umn_vs_lmn',
+                                                                                  'c9orf72'],
                                                                          join_rows=True,
                                                                          join_by=['subject_id', 'ts'],
                                                                          lower_case=True,
@@ -162,8 +168,8 @@ ALS_df.head()
 # Save the association between the original categorical features and the new one hot encoded columns:
 
 categ_feat_ohe = dict()
-categ_feat_ohe['El Escorial reviewed criteria'] = [ohe_col for ohe_col in new_columns
-                                                   if ohe_col.startswith('El Escorial reviewed criteria')]
+categ_feat_ohe['el_escorial_reviewed_criteria'] = [ohe_col for ohe_col in new_columns
+                                                   if ohe_col.startswith('el_escorial_reviewed_criteria')]
 categ_feat_ohe
 
 stream = open(f'{data_path}/cleaned/categ_feat_ohe.yml', 'w')
@@ -171,20 +177,20 @@ yaml.dump(categ_feat_ohe, stream, default_flow_style=False)
 
 # Reduxing the UMN vs LMN columns into just 2 clear columns:
 
-ALS_df.rename(columns={'UMN vs LMN_lmn': 'LMN',
-                            'UMN vs LMN_umn': 'UMN'}, inplace=True)
+ALS_df.rename(columns={'umn_vs_lmn_lmn': 'lmn',
+                            'umn_vs_lmn_umn': 'umn'}, inplace=True)
 ALS_df.head()
 
 # Activate both UMN and LMN features if the "both" value is 1
-ALS_df.LMN = ALS_df.apply(lambda df: 1 if df['UMN vs LMN_both'] == 1 or df['LMN'] == 1 else 0, axis=1)
-ALS_df.UMN = ALS_df.apply(lambda df: 1 if df['UMN vs LMN_both'] == 1 or df['UMN'] == 1 else 0, axis=1)
+ALS_df.lmn = ALS_df.apply(lambda df: 1 if df['umn_vs_lmn_both'] == 1 or df['lmn'] == 1 else 0, axis=1)
+ALS_df.umn = ALS_df.apply(lambda df: 1 if df['umn_vs_lmn_both'] == 1 or df['umn'] == 1 else 0, axis=1)
 
 # Drop the "both" column as it's redundant
-ALS_df.drop(columns='UMN vs LMN_both', inplace=True)
+ALS_df.drop(columns='umn_vs_lmn_both', inplace=True)
 
 ALS_df.head()
 
-len(ALS_df[(ALS_df.UMN == 1) & (ALS_df.LMN == 1)])
+len(ALS_df[(ALS_df.umn == 1) & (ALS_df.lmn == 1)])
 
 # **Comment:** The previous length matches the number found on the value counts of the original dataframe, corresponding to the value "both".
 
@@ -192,16 +198,10 @@ len(ALS_df[(ALS_df.UMN == 1) & (ALS_df.LMN == 1)])
 
 ALS_df.columns
 
-ALS_df.drop(columns='C9orf72_no', inplace=True)
+ALS_df.drop(columns='c9orf72_no', inplace=True)
 ALS_df.head()
 
-ALS_df.rename(columns={'C9orf72_yes': 'C9orf72'}, inplace=True)
-ALS_df.head()
-
-# ## Standardize all column names to be lower case and without spaces
-
-ALS_df.columns = [col.lower().replace(' ', '_').replace('-', '_') for col in ALS_df.columns]
-
+ALS_df.rename(columns={'c9orf72_yes': 'c9orf72'}, inplace=True)
 ALS_df.head()
 
 # ## NIV label
@@ -225,9 +225,22 @@ ALS_df.describe().transpose()
 #
 # Continuous data is normalized into z-scores, where 0 represents the mean and an absolute value of 1 corresponds to the standard deviation.
 
-ALS_df = du.data_processing.normalize_data(ALS_df, id_columns=['subject_id', 'ts'])
+ALS_df, mean, std = du.data_processing.normalize_data(ALS_df, id_columns=['subject_id', 'ts'],
+                                                      get_stats=True, inplace=True)
 ALS_df.head()
 
+
+# Save a dictionary with the mean and standard deviation values of each column that was normalized:
+
+norm_stats = dict()
+for key, _ in mean.items():
+    norm_stats[key] = dict()
+    norm_stats[key]['mean'] = mean[key]
+    norm_stats[key]['std'] = std[key]
+norm_stats
+
+stream = open(f'{data_path}/cleaned/norm_stats.yml', 'w')
+yaml.dump(norm_stats, stream, default_flow_style=False)
 
 ALS_df.describe().transpose()
 
