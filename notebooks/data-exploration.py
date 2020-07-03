@@ -41,7 +41,7 @@ import data_utils as du                    # Data science and machine learning r
 # -
 
 # Change to parent directory (presumably "Documents")
-os.chdir("../..")
+os.chdir("../../..")
 # Path to the CSV dataset files
 data_path = 'Datasets/Thesis/FCUL_ALS/'
 # ## Exploring the preprocessed dataset

@@ -233,7 +233,7 @@ class BaseRNN(nn.Module):
         # [TODO] Consider if it makes sense to add dropout to the last RNN layer
         # rnn_output = self.dropout(rnn_output)
         # Flatten RNN output to fit into the fully connected layer
-        flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden)
+        flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden * (1 + self.bidir))
         # Apply the final fully connected layer
         output = self.fc(flat_rnn_output)
         if prob_output is True:
@@ -403,11 +403,11 @@ class VanillaRNN(nn.Module):
                 for i in range(len(self.embed_features)):
                     self.rnn_n_inputs = self.rnn_n_inputs + self.embedding_dim[i] - len(self.embed_features[i])
         self.rnn = nn.RNN(self.rnn_n_inputs, self.n_hidden, self.n_rnn_layers,
-                           batch_first=True, dropout=self.p_dropout,
-                           bidirectional=self.bidir)
+                          batch_first=True, dropout=self.p_dropout,
+                          bidirectional=self.bidir)
         # Fully connected layer which takes the RNN's hidden units and
         # calculates the output classification
-        self.fc = nn.Linear(self.n_hidden, self.n_outputs)
+        self.fc = nn.Linear(self.n_hidden * (1 + self.bidir), self.n_outputs)
         # Dropout used between the last RNN layer and the fully connected layer
         self.dropout = nn.Dropout(p=self.p_dropout)
         if self.n_outputs == 1:
@@ -459,7 +459,7 @@ class VanillaRNN(nn.Module):
         # Apply dropout to the last RNN layer
         rnn_output = self.dropout(rnn_output)
         # Flatten RNN output to fit into the fully connected layer
-        flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden)
+        flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden * (1 + self.bidir))
         # Apply the final fully connected layer
         output = self.fc(flat_rnn_output)
         if prob_output is True:
@@ -630,7 +630,7 @@ class VanillaLSTM(nn.Module):
                             bidirectional=self.bidir)
         # Fully connected layer which takes the LSTM's hidden units and
         # calculates the output classification
-        self.fc = nn.Linear(self.n_hidden, self.n_outputs)
+        self.fc = nn.Linear(self.n_hidden * (1 + self.bidir), self.n_outputs)
         # Dropout used between the last LSTM layer and the fully connected layer
         self.dropout = nn.Dropout(p=self.p_dropout)
         if self.n_outputs == 1:
@@ -843,7 +843,7 @@ class TLSTM(BaseRNN):
         # [TODO] Consider if it makes sense to add dropout to the last RNN layer
         # rnn_output = self.dropout(rnn_output)
         # Flatten RNN output to fit into the fully connected layer
-        flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden)
+        flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden * (1 + self.bidir))
         # Apply the final fully connected layer
         output = self.fc(flat_rnn_output)
         if prob_output is True:
@@ -963,7 +963,7 @@ class MF1LSTM(BaseRNN):
         # [TODO] Consider if it makes sense to add dropout to the last RNN layer
         # rnn_output = self.dropout(rnn_output)
         # Flatten RNN output to fit into the fully connected layer
-        flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden)
+        flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden * (1 + self.bidir))
         # Apply the final fully connected layer
         output = self.fc(flat_rnn_output)
         if prob_output is True:
@@ -1085,7 +1085,7 @@ class MF2LSTM(BaseRNN):
         # [TODO] Consider if it makes sense to add dropout to the last RNN layer
         # rnn_output = self.dropout(rnn_output)
         # Flatten RNN output to fit into the fully connected layer
-        flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden)
+        flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden * (1 + self.bidir))
         # Apply the final fully connected layer
         output = self.fc(flat_rnn_output)
         if prob_output is True:
