@@ -235,6 +235,8 @@ if dataset_mode == 'pre-embedded':
     pretrained_model = du.deep_learning.load_checkpoint(filepath=f'{project_path}models/{pretrained_model_name}', 
                                                         ModelClass=getattr(Models, pretrained_model_type.replace('-', '')))
     pretrained_embed_layers = pretrained_model.embed_layers
+    # Update the embedding dimension
+    embedding_dim = pretrained_embed_layers.embedding_dim
     print(
 f'''
 Pre-trained model: {pretrained_model}
@@ -308,10 +310,10 @@ next(iter(test_dataloader))[0].shape
 
 # Model parameters:
 
-n_hidden = 1052                            # Number of hidden units
-n_layers = 3                               # Number of LSTM layers
-p_dropout = 0.2                            # Probability of dropout
-bidir = False                              # Sets if the RNN layer is bidirectional or not
+n_hidden = 653                             # Number of hidden units
+n_layers = 2                               # Number of LSTM layers
+p_dropout = 0.4250806721766345             # Probability of dropout
+bidir = True                              # Sets if the RNN layer is bidirectional or not
 
 if use_delta_ts == 'normalized':
     # Count the delta_ts column as another feature, only ignore ID, timestamp and label columns
@@ -335,10 +337,13 @@ if dataset_mode == 'pre-embedded':
     # Freeze the pre-trained embedding layer (i.e. stop it from being trained / changed)
     for param in model.embed_layers.parameters():
         param.requires_grad = False
+    print(model)
 
 # Define the name that will be given to the models that will be saved:
 
 model_name = 'rnn'
+if bidir is True:
+    model_name = model_name + '_bidir'
 if dataset_mode == 'pre-embedded':
     model_name = model_name + '_pre_embedded'
 elif dataset_mode == 'learn embedding':
@@ -383,7 +388,6 @@ val_loss_min, exp_name_min = du.machine_learning.optimize_hyperparameters(Models
                                                                           n_outputs=n_outputs, model_type='multivariate_rnn',
                                                                           is_custom=False, models_path=f'{project_path}models/',
                                                                           model_name=model_name,
-                                                                          array_param='embedding_dim',
                                                                           metrics=metrics,
                                                                           config_path=f'{project_path}hyperparameter_optimization/',
                                                                           var_seq=True, clip_value=0.5,
@@ -403,9 +407,9 @@ exp_name_min
 
 # Model parameters:
 
-n_hidden = 1052                            # Number of hidden units
-n_layers = 3                               # Number of LSTM layers
-p_dropout = 0.2                            # Probability of dropout
+n_hidden = 653                             # Number of hidden units
+n_layers = 2                               # Number of LSTM layers
+p_dropout = 0.4250806721766345             # Probability of dropout
 bidir = False                              # Sets if the RNN layer is bidirectional or not
 
 if use_delta_ts == 'normalized':
@@ -430,10 +434,13 @@ if dataset_mode == 'pre-embedded':
     # Freeze the pre-trained embedding layer (i.e. stop it from being trained / changed)
     for param in model.embed_layers.parameters():
         param.requires_grad = False
+    print(model)
 
 # Define the name that will be given to the models that will be saved:
 
 model_name = 'lstm'
+if bidir is True:
+    model_name = model_name + '_bidir'
 if dataset_mode == 'pre-embedded':
     model_name = model_name + '_pre_embedded'
 elif dataset_mode == 'learn embedding':
@@ -500,9 +507,10 @@ exp_name_min
 
 # Model parameters:
 
-n_hidden = 1052                            # Number of hidden units
-n_rnn_layers = 3                           # Number of TLSTM layers
-p_dropout = 0.2                            # Probability of dropout
+n_hidden = 653                             # Number of hidden units
+n_layers = 2                               # Number of T-LSTM layers
+p_dropout = 0.4250806721766345             # Probability of dropout
+bidir = False                              # Sets if the RNN layer is bidirectional or not
 elapsed_time = 'small'                     # Indicates if the elapsed time between events is small or long; influences how to discount elapsed time
 
 if use_delta_ts == 'raw':
@@ -512,7 +520,7 @@ elif use_delta_ts is False:
 
 # Instantiating the model:
 
-model = Models.TLSTM(n_inputs, n_hidden, n_outputs, n_rnn_layers, p_dropout,
+model = Models.TLSTM(n_inputs, n_hidden, n_outputs, n_layers, p_dropout,
                      embed_features=embed_features, n_embeddings=n_embeddings,
                      embedding_dim=embedding_dim, elapsed_time=elapsed_time)
 model
@@ -525,10 +533,13 @@ if dataset_mode == 'pre-embedded':
     # Freeze the pre-trained embedding layer (i.e. stop it from being trained / changed)
     for param in model.embed_layers.parameters():
         param.requires_grad = False
+    print(model)
 
 # Define the name that will be given to the models that will be saved:
 
 model_name = 'tlstm'
+if bidir is True:
+    model_name = model_name + '_bidir'
 if dataset_mode == 'pre-embedded':
     model_name = model_name + '_pre_embedded'
 elif dataset_mode == 'learn embedding':
@@ -594,9 +605,10 @@ exp_name_min
 
 # Model parameters:
 
-n_hidden = 100                             # Number of hidden units
-n_rnn_layers = 2                           # Number of MF1-LSTM layers
-p_dropout = 0.2                            # Probability of dropout
+n_hidden = 653                             # Number of hidden units
+n_layers = 2                               # Number of LSTM layers
+p_dropout = 0.4250806721766345             # Probability of dropout
+bidir = False                              # Sets if the RNN layer is bidirectional or not
 elapsed_time = 'small'                     # Indicates if the elapsed time between events is small or long; influences how to discount elapsed time
 
 if use_delta_ts == 'raw':
@@ -606,7 +618,7 @@ elif use_delta_ts is False:
 
 # Instantiating the model:
 
-model = Models.MF1LSTM(n_inputs, n_hidden, n_outputs, n_rnn_layers, p_dropout,
+model = Models.MF1LSTM(n_inputs, n_hidden, n_outputs, n_layers, p_dropout,
                        embed_features=embed_features, n_embeddings=n_embeddings,
                        embedding_dim=embedding_dim, elapsed_time=elapsed_time)
 model
@@ -619,10 +631,13 @@ if dataset_mode == 'pre-embedded':
     # Freeze the pre-trained embedding layer (i.e. stop it from being trained / changed)
     for param in model.embed_layers.parameters():
         param.requires_grad = False
+    print(model)
 
 # Define the name that will be given to the models that will be saved:
 
 model_name = 'mf1lstm'
+if bidir is True:
+    model_name = model_name + '_bidir'
 if dataset_mode == 'pre-embedded':
     model_name = model_name + '_pre_embedded'
 elif dataset_mode == 'learn embedding':
@@ -688,9 +703,10 @@ exp_name_min
 
 # Model parameters:
 
-n_hidden = 100                             # Number of hidden units
-n_rnn_layers = 2                           # Number of MF2-LSTM layers
-p_dropout = 0.2                            # Probability of dropout
+n_hidden = 653                             # Number of hidden units
+n_layers = 2                               # Number of LSTM layers
+p_dropout = 0.4250806721766345             # Probability of dropout
+bidir = False                              # Sets if the RNN layer is bidirectional or not
 elapsed_time = 'small'                     # Indicates if the elapsed time between events is small or long; influences how to discount elapsed time
 
 if use_delta_ts == 'normalized':
@@ -713,10 +729,13 @@ if dataset_mode == 'pre-embedded':
     # Freeze the pre-trained embedding layer (i.e. stop it from being trained / changed)
     for param in model.embed_layers.parameters():
         param.requires_grad = False
+    print(model)
 
 # Define the name that will be given to the models that will be saved:
 
 model_name = 'mf2lstm'
+if bidir is True:
+    model_name = model_name + '_bidir'
 if dataset_mode == 'pre-embedded':
     model_name = model_name + '_pre_embedded'
 elif dataset_mode == 'learn embedding':

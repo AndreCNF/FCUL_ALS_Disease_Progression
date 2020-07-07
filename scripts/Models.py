@@ -1,7 +1,6 @@
 import torch                            # PyTorch to create and apply deep learning models
 from torch import nn                    # nn for neural network layers
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-import torch.jit as jit                 # TorchScript for faster custom models
 import math                             # Useful package for logarithm operations
 import numpy as np                      # Mathematical operations package, allowing also for missing values representation
 from functools import partial           # Fix some parameters of a function
@@ -17,7 +16,7 @@ class BaseRNN(nn.Module):
 
         nn.Parameters
         ----------
-        rnn_module : nn.Module or jit.ScriptModule
+        rnn_module : nn.Module
             Recurrent neural network module to be used in this model.
         n_inputs : int
             Number of input features.
@@ -202,7 +201,6 @@ class BaseRNN(nn.Module):
             rnn_output, self.hidden = self.rnn_layer(x, hidden_state)
         else:
             # List[RNNState]: One state per layer
-            # output_states = jit.annotate(List[Tuple[Tensor, Tensor]], [])
             if self.is_lstm is True:
                 output_states = (torch.zeros(self.hidden[0].shape), torch.zeros(self.hidden[1].shape))
             else:
@@ -229,9 +227,6 @@ class BaseRNN(nn.Module):
                 i += 1
             # Update the hidden states variable
             self.hidden = output_states
-        # Apply dropout to the last RNN layer
-        # [TODO] Consider if it makes sense to add dropout to the last RNN layer
-        # rnn_output = self.dropout(rnn_output)
         # Flatten RNN output to fit into the fully connected layer
         flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden * (1 + self.bidir))
         # Apply the final fully connected layer
@@ -678,7 +673,7 @@ class VanillaLSTM(nn.Module):
         # Apply dropout to the last LSTM layer
         lstm_output = self.dropout(lstm_output)
         # Flatten LSTM output to fit into the fully connected layer
-        flat_lstm_output = lstm_output.contiguous().view(-1, self.n_hidden)
+        flat_lstm_output = lstm_output.contiguous().view(-1, self.n_hidden * (1 + self.bidir))
         # Apply the final fully connected layer
         output = self.fc(flat_lstm_output)
         if prob_output is True:
@@ -820,7 +815,6 @@ class TLSTM(BaseRNN):
             rnn_output, self.hidden = self.rnn_layer(x, hidden_state, delta_ts=delta_ts)
         else:
             # List[RNNState]: One state per layer
-            # output_states = jit.annotate(List[Tuple[Tensor, Tensor]], [])
             output_states = (torch.zeros(self.hidden[0].shape), torch.zeros(self.hidden[1].shape))
             i = 0
             # The first RNN layer's input is the original input;
@@ -839,9 +833,8 @@ class TLSTM(BaseRNN):
                 i += 1
             # Update the hidden states variable
             self.hidden = output_states
-        # Apply dropout to the last RNN layer
-        # [TODO] Consider if it makes sense to add dropout to the last RNN layer
-        # rnn_output = self.dropout(rnn_output)
+        # Reconvert the data to the format of (sample x timestamp x features)
+        rnn_output = rnn_output.permute(1, 0, 2)
         # Flatten RNN output to fit into the fully connected layer
         flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden * (1 + self.bidir))
         # Apply the final fully connected layer
@@ -940,7 +933,6 @@ class MF1LSTM(BaseRNN):
             rnn_output, self.hidden = self.rnn_layer(x, hidden_state, delta_ts=delta_ts)
         else:
             # List[RNNState]: One state per layer
-            # output_states = jit.annotate(List[Tuple[Tensor, Tensor]], [])
             output_states = (torch.zeros(self.hidden[0].shape), torch.zeros(self.hidden[1].shape))
             i = 0
             # The first RNN layer's input is the original input;
@@ -959,9 +951,8 @@ class MF1LSTM(BaseRNN):
                 i += 1
             # Update the hidden states variable
             self.hidden = output_states
-        # Apply dropout to the last RNN layer
-        # [TODO] Consider if it makes sense to add dropout to the last RNN layer
-        # rnn_output = self.dropout(rnn_output)
+        # Reconvert the data to the format of (sample x timestamp x features)
+        rnn_output = rnn_output.permute(1, 0, 2)
         # Flatten RNN output to fit into the fully connected layer
         flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden * (1 + self.bidir))
         # Apply the final fully connected layer
@@ -1062,7 +1053,6 @@ class MF2LSTM(BaseRNN):
             rnn_output, self.hidden = self.rnn_layer(x, hidden_state, delta_ts=delta_ts)
         else:
             # List[RNNState]: One state per layer
-            # output_states = jit.annotate(List[Tuple[Tensor, Tensor]], [])
             output_states = (torch.zeros(self.hidden[0].shape), torch.zeros(self.hidden[1].shape))
             i = 0
             # The first RNN layer's input is the original input;
@@ -1081,9 +1071,8 @@ class MF2LSTM(BaseRNN):
                 i += 1
             # Update the hidden states variable
             self.hidden = output_states
-        # Apply dropout to the last RNN layer
-        # [TODO] Consider if it makes sense to add dropout to the last RNN layer
-        # rnn_output = self.dropout(rnn_output)
+        # Reconvert the data to the format of (sample x timestamp x features)
+        rnn_output = rnn_output.permute(1, 0, 2)
         # Flatten RNN output to fit into the fully connected layer
         flat_rnn_output = rnn_output.contiguous().view(-1, self.n_hidden * (1 + self.bidir))
         # Apply the final fully connected layer
@@ -1101,7 +1090,7 @@ class MF2LSTM(BaseRNN):
             return output
 
 
-class LSTMCell(jit.ScriptModule):
+class LSTMCell(nn.Module):
     def __init__(self, input_size, hidden_size):
         super(LSTMCell, self).__init__()
         self.input_size = input_size
@@ -1111,7 +1100,6 @@ class LSTMCell(jit.ScriptModule):
         self.bias_ih = nn.Parameter(torch.randn(4 * hidden_size))
         self.bias_hh = nn.Parameter(torch.randn(4 * hidden_size))
 
-    @jit.script_method
     def forward(self, input, state):
         # type: (Tensor, Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tuple[Tensor, Tensor]]
         hx, cx = state
@@ -1130,7 +1118,7 @@ class LSTMCell(jit.ScriptModule):
         return hy, (hy, cy)
 
 
-class TLSTMCell(jit.ScriptModule):
+class TLSTMCell(nn.Module):
     def __init__(self, input_size, hidden_size, delta_ts_col=-1, elapsed_time='small',
                  no_small_delta=True):
         super(TLSTMCell, self).__init__()
@@ -1148,7 +1136,6 @@ class TLSTMCell(jit.ScriptModule):
         self.bias_hh = nn.Parameter(torch.randn(4 * hidden_size))
         self.bias_ch = nn.Parameter(torch.randn(hidden_size))
 
-    @jit.script_method
     def forward(self, input, state, delta_ts=torch.tensor(np.nan)):
         # type: (Tensor, Tuple[Tensor, Tensor], Tensor) -> Tuple[Tensor, Tuple[Tensor, Tensor]]
         # Separate the elapsed time from the remaining features
@@ -1194,7 +1181,7 @@ class TLSTMCell(jit.ScriptModule):
         return hy, (hy, cy)
 
 
-class MF1LSTMCell(jit.ScriptModule):
+class MF1LSTMCell(nn.Module):
     def __init__(self, input_size, hidden_size, delta_ts_col=-1, elapsed_time='small',
                  no_small_delta=True):
         super(MF1LSTMCell, self).__init__()
@@ -1210,7 +1197,6 @@ class MF1LSTMCell(jit.ScriptModule):
         self.bias_ih = nn.Parameter(torch.randn(4 * hidden_size))
         self.bias_hh = nn.Parameter(torch.randn(4 * hidden_size))
 
-    @jit.script_method
     def forward(self, input, state, delta_ts=torch.tensor(np.nan)):
         # type: (Tensor, Tuple[Tensor, Tensor], Tensor) -> Tuple[Tensor, Tuple[Tensor, Tensor]]
         # Separate the elapsed time from the remaining features
@@ -1250,7 +1236,7 @@ class MF1LSTMCell(jit.ScriptModule):
         return hy, (hy, cy)
 
 
-class MF2LSTMCell(jit.ScriptModule):
+class MF2LSTMCell(nn.Module):
     def __init__(self, input_size, hidden_size, delta_ts_col=-1, elapsed_time='small',
                  no_small_delta=True):
         super(MF2LSTMCell, self).__init__()
@@ -1268,7 +1254,6 @@ class MF2LSTMCell(jit.ScriptModule):
         self.bias_hh = nn.Parameter(torch.randn(4 * hidden_size))
         self.bias_fq = nn.Parameter(torch.randn(hidden_size))
 
-    @jit.script_method
     def forward(self, input, state, delta_ts=torch.tensor(np.nan)):
         # type: (Tensor, Tuple[Tensor, Tensor], Tensor) -> Tuple[Tensor, Tuple[Tensor, Tensor]]
         # Separate the elapsed time from the remaining features
@@ -1295,7 +1280,7 @@ class MF2LSTMCell(jit.ScriptModule):
             g = 1 / torch.log(math.e * delta_ts)
         # Apply MF2-LSTM's parametric time
         g = g.view(input.shape[0], -1)
-        q = torch.cat([(g / 60), (g / 720) ** 2, (g / 1440) ** 3], dim=1)
+        q = torch.cat([(g / 15), (g / 90) ** 2, (g / 180) ** 3], dim=1)
         forget_gate = forget_gate + torch.mm(q, self.weight_fq.t()) + self.bias_fq
         # Apply each gate's activation function
         in_gate = torch.sigmoid(in_gate)
@@ -1310,12 +1295,11 @@ class MF2LSTMCell(jit.ScriptModule):
         return hy, (hy, cy)
 
 
-class LSTMLayer(jit.ScriptModule):
+class LSTMLayer(nn.Module):
     def __init__(self, cell, *cell_args):
         super(LSTMLayer, self).__init__()
         self.cell = cell(*cell_args)
 
-    @jit.script_method
     def forward(self, input, state):
         # type: (Tensor, Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tuple[Tensor, Tensor]]
         # Get mini batches of data on each timestamp
@@ -1328,24 +1312,22 @@ class LSTMLayer(jit.ScriptModule):
         return torch.stack(outputs), state
 
 
-class ReverseLSTMLayer(jit.ScriptModule):
+class ReverseLSTMLayer(nn.Module):
     def __init__(self, cell, *cell_args):
         super(ReverseLSTMLayer, self).__init__()
         self.cell = cell(*cell_args)
 
-    @jit.script_method
     def forward(self, input, state):
         # type: (Tensor, Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tuple[Tensor, Tensor]]
         # Get mini batches of data on each timestamp
         inputs = du.utils.reverse(input.unbind(0))
-        outputs = jit.annotate(List[Tensor], [])
         for i in range(len(inputs)):
             out, state = self.cell(inputs[i], state)
             outputs += [out]
         return torch.stack(du.utils.reverse(outputs)), state
 
 
-class BidirLSTMLayer(jit.ScriptModule):
+class BidirLSTMLayer(nn.Module):
     __constants__ = ['directions']
 
     def __init__(self, cell, *cell_args):
@@ -1355,12 +1337,11 @@ class BidirLSTMLayer(jit.ScriptModule):
             ReverseLSTMLayer(cell, *cell_args),
         ])
 
-    @jit.script_method
     def forward(self, input, states):
         # type: (Tensor, List[Tuple[Tensor, Tensor]]) -> Tuple[Tensor, List[Tuple[Tensor, Tensor]]]
         # List[LSTMState]: [forward LSTMState, backward LSTMState]
-        outputs = jit.annotate(List[Tensor], [])
-        output_states = jit.annotate(List[Tuple[Tensor, Tensor]], [])
+        outputs = list()
+        output_states = list()
         # XXX: enumerate https://github.com/pytorch/pytorch/issues/14471
         i = 0
         for direction in self.directions:
@@ -1372,17 +1353,16 @@ class BidirLSTMLayer(jit.ScriptModule):
         return torch.cat(outputs, -1), output_states
 
 
-class TLSTMLayer(jit.ScriptModule):
+class TLSTMLayer(nn.Module):
     def __init__(self, cell, *cell_args):
         super(TLSTMLayer, self).__init__()
         self.cell = cell(*cell_args)
 
-    @jit.script_method
     def forward(self, input, state, delta_ts=torch.tensor(np.nan)):
         # type: (Tensor, Tuple[Tensor, Tensor], Tensor) -> Tuple[Tensor, Tuple[Tensor, Tensor]]
         # Get mini batches of data on each timestamp
         inputs = input.unbind(0)
-        outputs = []
+        outputs = list()
         # Run the LSTM cell on each timestamp, for multiple sequences at the same time
         for i in range(len(inputs)):
             out, state = self.cell(inputs[i], state, delta_ts[:, i])
@@ -1390,24 +1370,22 @@ class TLSTMLayer(jit.ScriptModule):
         return torch.stack(outputs), state
 
 
-class ReverseTLSTMLayer(jit.ScriptModule):
+class ReverseTLSTMLayer(nn.Module):
     def __init__(self, cell, *cell_args):
         super(ReverseTLSTMLayer, self).__init__()
         self.cell = cell(*cell_args)
 
-    @jit.script_method
     def forward(self, input, state, delta_ts=torch.tensor(np.nan)):
         # type: (Tensor, Tuple[Tensor, Tensor], Tensor) -> Tuple[Tensor, Tuple[Tensor, Tensor]]
         # Get mini batches of data on each timestamp
         inputs = du.utils.reverse(input.unbind(0))
-        outputs = jit.annotate(List[Tensor], [])
         for i in range(len(inputs)):
             out, state = self.cell(inputs[i], state, delta_ts)
             outputs += [out]
         return torch.stack(du.utils.reverse(outputs)), state
 
 
-class BidirTLSTMLayer(jit.ScriptModule):
+class BidirTLSTMLayer(nn.Module):
     __constants__ = ['directions']
 
     def __init__(self, cell, *cell_args):
@@ -1417,12 +1395,11 @@ class BidirTLSTMLayer(jit.ScriptModule):
             ReverseTLSTMLayer(cell, *cell_args),
         ])
 
-    @jit.script_method
     def forward(self, input, states, delta_ts=torch.tensor(np.nan)):
         # type: (Tensor, Tuple[Tensor, Tensor], Tensor) -> Tuple[Tensor, Tuple[Tensor, Tensor]]
         # List[LSTMState]: [forward LSTMState, backward LSTMState]
-        outputs = jit.annotate(List[Tensor], [])
-        output_states = jit.annotate(List[Tuple[Tensor, Tensor]], [])
+        outputs = list()
+        output_states = list()
         # XXX: enumerate https://github.com/pytorch/pytorch/issues/14471
         i = 0
         for direction in self.directions:
@@ -1434,7 +1411,7 @@ class BidirTLSTMLayer(jit.ScriptModule):
         return torch.cat(outputs, -1), output_states
 
 
-class StackedLSTMWithDropout(jit.ScriptModule):
+class StackedLSTMWithDropout(nn.Module):
     # Necessary for iterating through self.layers and dropout support
     __constants__ = ['layers', 'num_layers']
 
@@ -1453,11 +1430,10 @@ class StackedLSTMWithDropout(jit.ScriptModule):
 
         self.dropout_layer = nn.Dropout(0.4)
 
-    @jit.script_method
     def forward(self, input, states):
         # type: (Tensor, List[Tuple[Tensor, Tensor]]) -> Tuple[Tensor, List[Tuple[Tensor, Tensor]]]
         # List[LSTMState]: One state per layer
-        output_states = jit.annotate(List[Tuple[Tensor, Tensor]], [])
+        output_states = list()
         output = input
         # XXX: enumerate https://github.com/pytorch/pytorch/issues/14471
         i = 0

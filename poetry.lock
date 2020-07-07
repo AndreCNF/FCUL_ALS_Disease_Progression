@@ -349,7 +349,7 @@ torch = "^1.3"
 tqdm = "^4.43.0"
 
 [package.source]
-reference = "f547de5de58fb58e33611a2cb8b7808299c1e1d5"
+reference = "9c6aac408d5d65aba23bc0427bc0f98f2dafd388"
 type = "git"
 url = "https://github.com/AndreCNF/data-utils.git"
 [[package]]
