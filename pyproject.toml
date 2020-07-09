@@ -25,6 +25,7 @@ dash = "^1.13.4"
 dash_table = "^4.8.1"
 ipywidgets = "^7.5.1"
 pixiedust = "^1.1.18"
+xgboost = "^1.1.1"
 
 [tool.poetry.dev-dependencies]
 pylint = "^2.3"

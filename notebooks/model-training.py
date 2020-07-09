@@ -9,7 +9,7 @@
 import os                                  # os handles directory/workspace changes
 import comet_ml                            # Comet.ml can log training metrics, parameters, do version control and parameter optimization
 import torch                               # PyTorch to create and apply deep learning models
-# import xgboost as xgb                      # Gradient boosting trees models
+import xgboost as xgb                      # Gradient boosting trees models
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, f1_score, log_loss, roc_auc_score
@@ -23,9 +23,9 @@ from ipywidgets import interact            # Display selectors and sliders
 import pixiedust                           # Debugging in Jupyter Notebook cells
 
 # Path to the parquet dataset files
-data_path = 'Datasets/Thesis/FCUL_ALS/cleaned/'
+data_path = 'data/FCUL_ALS/cleaned/'
 # Path to the code files
-project_path = 'GitHub/FCUL_ALS_Disease_Progression/'
+project_path = 'code/FCUL_ALS_Disease_Progression/'
 
 # Change to the scripts directory
 os.chdir("../scripts/")
@@ -280,10 +280,35 @@ else:
     train_features, train_labels = dataset.X[train_indeces], dataset.y[train_indeces]
     val_features, val_labels = dataset.X[val_indeces], dataset.y[val_indeces]
     test_features, test_labels = dataset.X[test_indeces], dataset.y[test_indeces]
+    # Remove the ID and timestamp columns from the data arrays
+    train_features = train_features[:, :, 2:]
+    val_features = val_features[:, :, 2:]
+    test_features = test_features[:, :, 2:]
+    # Reshape the data into a 2D format
+    train_features = train_features.reshape(-1, train_features.shape[-1])
+    val_features = val_features.reshape(-1, val_features.shape[-1])
+    test_features = test_features.reshape(-1, test_features.shape[-1])
+    train_labels = train_labels.reshape(-1)
+    val_labels = val_labels.reshape(-1)
+    test_labels = test_labels.reshape(-1)
+    # Remove padding samples from the data
+    train_features = train_features[[padding_value not in row for row in train_features]]
+    val_features = val_features[[padding_value not in row for row in val_features]]
+    test_features = test_features[[padding_value not in row for row in test_features]]
+    train_labels = train_labels[[padding_value not in row for row in train_labels]]
+    val_labels = val_labels[[padding_value not in row for row in val_labels]]
+    test_labels = test_labels[[padding_value not in row for row in test_labels]]
+    # Convert from PyTorch tensor to NumPy array
+    train_features = train_features.numpy()
+    val_features = val_features.numpy()
+    test_features = test_features.numpy()
+    train_labels = train_labels.numpy()
+    val_labels = val_labels.numpy()
+    test_labels = test_labels.numpy()
     # Ignore the dataloaders, we only care about the full arrays when using scikit-learn or XGBoost
-    del train_dataloaders
-    del val_dataloaders
-    del test_dataloaders
+    del train_dataloader
+    del val_dataloader
+    del test_dataloader
 
 if ml_core == 'deep learning':
     print(next(iter(train_dataloader))[0])
@@ -299,8 +324,6 @@ if ml_core == 'deep learning':
     print(next(iter(test_dataloader))[0])
 else:
     print(test_features[:32])
-
-next(iter(test_dataloader))[0].shape
 
 # ## Training models
 
@@ -410,7 +433,7 @@ exp_name_min
 n_hidden = 653                             # Number of hidden units
 n_layers = 2                               # Number of LSTM layers
 p_dropout = 0.4250806721766345             # Probability of dropout
-bidir = False                              # Sets if the RNN layer is bidirectional or not
+bidir = True                               # Sets if the RNN layer is bidirectional or not
 
 if use_delta_ts == 'normalized':
     # Count the delta_ts column as another feature, only ignore ID, timestamp and label columns
@@ -508,7 +531,7 @@ exp_name_min
 # Model parameters:
 
 n_hidden = 653                             # Number of hidden units
-n_layers = 2                               # Number of T-LSTM layers
+n_layers = 2                               # Number of LSTM layers
 p_dropout = 0.4250806721766345             # Probability of dropout
 bidir = False                              # Sets if the RNN layer is bidirectional or not
 elapsed_time = 'small'                     # Indicates if the elapsed time between events is small or long; influences how to discount elapsed time
@@ -522,7 +545,8 @@ elif use_delta_ts is False:
 
 model = Models.TLSTM(n_inputs, n_hidden, n_outputs, n_layers, p_dropout,
                      embed_features=embed_features, n_embeddings=n_embeddings,
-                     embedding_dim=embedding_dim, elapsed_time=elapsed_time)
+                     embedding_dim=embedding_dim, elapsed_time=elapsed_time,
+                     bidir=bidir)
 model
 
 # Add the frozen, pre-trained embedding layer (if required):
@@ -546,8 +570,6 @@ elif dataset_mode == 'learn embedding':
     model_name = model_name + '_with_embedding'
 elif dataset_mode == 'one hot encoded':
     model_name = model_name + '_one_hot_encoded'
-if use_delta_ts is not False:
-    model_name = model_name + '_delta_ts'
 model_name = model_name + f'_{time_window_days}dayswindow'
 model_name
 
@@ -644,8 +666,6 @@ elif dataset_mode == 'learn embedding':
     model_name = model_name + '_with_embedding'
 elif dataset_mode == 'one hot encoded':
     model_name = model_name + '_one_hot_encoded'
-if use_delta_ts is not False:
-    model_name = model_name + '_delta_ts'
 model_name = model_name + f'_{time_window_days}dayswindow'
 model_name
 
@@ -716,7 +736,7 @@ elif use_delta_ts is False:
 
 # Instantiating the model:
 
-model = Models.MF2LSTM(n_inputs, n_hidden, n_outputs, n_rnn_layers, p_dropout,
+model = Models.MF2LSTM(n_inputs, n_hidden, n_outputs, n_layers, p_dropout,
                        embed_features=embed_features, n_embeddings=n_embeddings,
                        embedding_dim=embedding_dim, elapsed_time=elapsed_time)
 model
@@ -742,8 +762,6 @@ elif dataset_mode == 'learn embedding':
     model_name = model_name + '_with_embedding'
 elif dataset_mode == 'one hot encoded':
     model_name = model_name + '_one_hot_encoded'
-if use_delta_ts is not False:
-    model_name = model_name + '_delta_ts'
 model_name = model_name + f'_{time_window_days}dayswindow'
 model_name
 
@@ -797,13 +815,14 @@ exp_name_min
 
 # Model hyperparameters:
 
-objective = 'multi:softmax'                # Objective function to minimize (in this case, softmax)
-eval_metric = 'mlogloss'                   # Metric to analyze (in this case, multioutput negative log likelihood loss)
+objective = 'binary:logistic'              # Objective function to minimize (in this case, logistic)
+eval_metric = 'logloss'                    # Metric to analyze (in this case, negative log likelihood loss)
 
 # Initializing the model:
 
 xgb_model = xgb.XGBClassifier(objective=objective, eval_metric=eval_metric, learning_rate=lr,
-                              num_class=n_output, random_state=du.random_seed, seed=du.random_seed)
+                              num_class=1, n_estimators=50000, 
+                              random_state=du.random_seed, seed=du.random_seed)
 xgb_model
 
 # Training with early stopping (stops training if the evaluation metric doesn't improve on 5 consequetive iterations):
@@ -822,25 +841,64 @@ val_loss
 # Get the current day and time to attach to the saved model's name
 current_datetime = datetime.now().strftime('%d_%m_%Y_%H_%M')
 # Filename and path where the model will be saved
-model_filename = f'{models_path}xgb_{val_loss:.4f}valloss_{current_datetime}.pth'
+model_filename = f'{project_path}models/xgb_{val_loss:.4f}valloss_{current_datetime}.pth'
 # Save the model
-joblib.dump(xgb_model, model_filename)
+xgb_model.save_model(model_filename)
 
-# xgb_model = joblib.load(f'{models_path}xgb/checkpoint_16_12_2019_11_39.model')
-xgb_model = joblib.load(model_filename)
+xgb_model = xgb.XGBClassifier()
+xgb_model.load_model(model_filename)
 xgb_model
 
 # Train until the best iteration:
 
-xgb_model = xgb.XGBClassifier(objective=objective, eval_metric='mlogloss', learning_rate=lr,
-                              num_class=n_class, random_state=du.random_seed, seed=du.random_seed)
-xgb_model
+best_xgb_model = xgb_model
 
-xgb_model.fit(train_features, train_labels, early_stopping_rounds=5, num_boost_round=xgb_model.best_iteration)
+# +
+# best_xgb_model = xgb.XGBClassifier(objective=objective, eval_metric=eval_metric, learning_rate=lr,
+#                                    num_class=1, n_estimators=xgb_model.best_iteration, 
+#                                    random_state=du.random_seed, seed=du.random_seed)
+# best_xgb_model
+
+# +
+# best_xgb_model.fit(train_features, train_labels)
+# -
+
+# Find the validation loss:
+
+# +
+# val_pred_proba = best_xgb_model.predict_proba(val_features)
+
+# +
+# val_loss = log_loss(val_labels, val_pred_proba)
+# val_loss
+# -
+
+# Save the model:
+
+# +
+# # Get the current day and time to attach to the saved model's name
+# current_datetime = datetime.now().strftime('%d_%m_%Y_%H_%M')
+# # Filename and path where the model will be saved
+# model_filename = f'{models_path}xgb_{val_loss:.4f}valloss_{current_datetime}.pth'
+# # Save the model
+# best_xgb_model.save_model(model_filename)
+
+# +
+# best_xgb_model = xgb.XGBClassifier()
+# best_xgb_model.load_model(model_filename)
+# best_xgb_model
+# -
+
+# Evaluate on the validation set:
+
+pred_proba = best_xgb_model.predict_proba(val_features)
+
+auc = roc_auc_score(val_labels, pred_proba[:, 1])
+auc
 
 # Evaluate on the test set:
 
-pred = xgb_model.predict(test_features)
+pred = best_xgb_model.predict(test_features)
 
 acc = accuracy_score(test_labels, pred)
 acc
@@ -848,12 +906,16 @@ acc
 f1 = f1_score(test_labels, pred, average='weighted')
 f1
 
-pred_proba = xgb_model.predict_proba(test_features)
+pred_proba = best_xgb_model.predict_proba(test_features)
 
 loss = log_loss(test_labels, pred_proba)
 loss
 
-auc = roc_auc_score(test_labels, pred_proba, multi_class='ovr', average='weighted')
+test_labels.shape
+
+pred_proba
+
+auc = roc_auc_score(test_labels, pred_proba[:, 1])
 auc
 
 # #### Hyperparameter optimization
@@ -891,13 +953,20 @@ val_loss
 # Get the current day and time to attach to the saved model's name
 current_datetime = datetime.now().strftime('%d_%m_%Y_%H_%M')
 # Filename and path where the model will be saved
-model_filename = f'{models_path}logreg_{val_loss:.4f}valloss_{current_datetime}.pth'
+model_filename = f'{project_path}models/logreg_{val_loss:.4f}valloss_{current_datetime}.pth'
 # Save the model
 joblib.dump(logreg_model, model_filename)
 
 # logreg_model = joblib.load(f'{models_path}logreg/checkpoint_16_12_2019_02_27.model')
 logreg_model = joblib.load(model_filename)
 logreg_model
+
+# Evaluate on the validation set:
+
+pred_proba = logreg_model.predict_proba(val_features)
+
+auc = roc_auc_score(val_labels, pred_proba[:, 1])
+auc
 
 # Evaluate on the test set:
 
@@ -914,7 +983,7 @@ pred_proba = logreg_model.predict_proba(test_features)
 loss = log_loss(test_labels, pred_proba)
 loss
 
-auc = roc_auc_score(test_labels, pred_proba, multi_class='ovr', average='weighted')
+auc = roc_auc_score(test_labels, pred_proba[:, 1])
 auc
 
 # #### Hyperparameter optimization
@@ -952,7 +1021,7 @@ val_loss
 # Get the current day and time to attach to the saved model's name
 current_datetime = datetime.now().strftime('%d_%m_%Y_%H_%M')
 # Filename and path where the model will be saved
-model_filename = f'{models_path}svm_{val_loss:.4f}valloss_{current_datetime}.pth'
+model_filename = f'{project_path}models/svm_{val_loss:.4f}valloss_{current_datetime}.pth'
 # Save the model
 joblib.dump(svm_model, model_filename)
 
@@ -960,22 +1029,29 @@ joblib.dump(svm_model, model_filename)
 svm_model = joblib.load(model_filename)
 svm_model
 
+# Evaluate on the validation set:
+
+pred_proba = svm_model.predict_proba(val_features)
+
+auc = roc_auc_score(val_labels, pred_proba[:, 1])
+auc
+
 # Evaluate on the test set:
 
-acc = logreg_model.score(test_features, test_labels)
+acc = svm_model.score(test_features, test_labels)
 acc
 
-pred = logreg_model.predict(test_features)
+pred = svm_model.predict(test_features)
 
 f1 = f1_score(test_labels, pred, average='weighted')
 f1
 
-pred_proba = logreg_model.predict_proba(test_features)
+pred_proba = svm_model.predict_proba(test_features)
 
 loss = log_loss(test_labels, pred_proba)
 loss
 
-auc = roc_auc_score(test_labels, pred_proba, multi_class='ovr', average='weighted')
+auc = roc_auc_score(test_labels, pred_proba[:, 1])
 auc
 
 # #### Hyperparameter optimization

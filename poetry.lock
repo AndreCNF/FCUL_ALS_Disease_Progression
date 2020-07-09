@@ -352,6 +352,7 @@ tqdm = "^4.43.0"
 reference = "9c6aac408d5d65aba23bc0427bc0f98f2dafd388"
 type = "git"
 url = "https://github.com/AndreCNF/data-utils.git"
+
 [[package]]
 category = "main"
 description = "Decorators for Humans"
@@ -1856,6 +1857,25 @@ version = "1.0.2"
 
 [[package]]
 category = "main"
+description = "XGBoost Python Package"
+name = "xgboost"
+optional = false
+python-versions = ">=3.5"
+version = "1.1.1"
+
+[package.dependencies]
+numpy = "*"
+scipy = "*"
+
+[package.extras]
+dask = ["dask", "pandas", "distributed"]
+datatable = ["datatable"]
+pandas = ["pandas"]
+plotting = ["graphviz", "matplotlib"]
+scikit-learn = ["scikit-learn"]
+
+[[package]]
+category = "main"
 description = "Yet Another Terminal Spinner"
 name = "yaspin"
 optional = false
@@ -1887,7 +1907,7 @@ docs = ["sphinx", "jaraco.packaging (>=3.2)", "rst.linker (>=1.9)"]
 testing = ["jaraco.itertools", "func-timeout"]
 
 [metadata]
-content-hash = "140fd01b5a4c4e5fbac4d2f82ff7cead9e9a3c7ea4f33341ef7333daeb351394"
+content-hash = "56e4c7a967275f07ba69fca8db4235262a2f4c3a00d09eaa4df3fc0ad27d39ec"
 python-versions = "^3.6.1"
 
 [metadata.files]
@@ -2855,6 +2875,12 @@ wrapt = [
 wurlitzer = [
     {file = "wurlitzer-1.0.2-py2.py3-none-any.whl", hash = "sha256:15a7cb8be359e8ee42093468a60bf462af332088ea62e767af64d83fcc332ac0"},
     {file = "wurlitzer-1.0.2.tar.gz", hash = "sha256:23e85af0850b98add77bef0a1eb47b243baab29160131d349234c9dfc9e57add"},
+]
+xgboost = [
+    {file = "xgboost-1.1.1-py3-none-macosx_10_13_x86_64.macosx_10_14_x86_64.macosx_10_15_x86_64.whl", hash = "sha256:911b2fe8689073ffa65f5b51552233d2a874f6fb0f670775c9c416cae0d2b0cb"},
+    {file = "xgboost-1.1.1-py3-none-manylinux2010_x86_64.whl", hash = "sha256:483c49c6ea0d0ccfa607f5847613bb5deeca91a31f8bc79dc933017b3a4a27f1"},
+    {file = "xgboost-1.1.1-py3-none-win_amd64.whl", hash = "sha256:e52c8a831efe18c42b35e5ea699eec77cba0db52dfb66b264f32451c31bb5d75"},
+    {file = "xgboost-1.1.1.tar.gz", hash = "sha256:45741bb6c3a09b050b974baec8353d649d0e730a9d78dc0382c998d53b8e89b3"},
 ]
 yaspin = [
     {file = "yaspin-0.15.0-py2.py3-none-any.whl", hash = "sha256:0ee4668936d0053de752c9a4963929faa3a832bd0ba823877d27855592dc80aa"},
