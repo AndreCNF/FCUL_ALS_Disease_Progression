@@ -13,7 +13,7 @@ import xgboost as xgb                      # Gradient boosting trees models
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, f1_score, log_loss, roc_auc_score
-import joblib                              # Save scikit-learn models in disk
+import joblib                              # Save and load scikit-learn models in disk
 from datetime import datetime              # datetime to use proper date and time formats
 import yaml                                # Save and load YAML files
 import getpass                             # Get password or similar private inputs

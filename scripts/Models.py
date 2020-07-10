@@ -450,7 +450,7 @@ class VanillaRNN(nn.Module):
             #     total_length = self.total_length
             # Undo the packing operation
             rnn_output, _ = pad_packed_sequence(rnn_output, batch_first=True,
-                                                 total_length=self.total_length)
+                                                total_length=self.total_length)
         # Apply dropout to the last RNN layer
         rnn_output = self.dropout(rnn_output)
         # Flatten RNN output to fit into the fully connected layer

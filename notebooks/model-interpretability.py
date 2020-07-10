@@ -2,16 +2,17 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_json: true
 #     formats: ipynb,py:light
 #     text_representation:
 #       extension: .py
 #       format_name: light
-#       format_version: '1.4'
-#       jupytext_version: 1.1.3
+#       format_version: '1.5'
+#       jupytext_version: 1.4.1
 #   kernelspec:
-#     display_name: fcul-als-python
+#     display_name: fcul_als_disease_progression
 #     language: python
-#     name: fcul-als-python
+#     name: fcul_als_disease_progression
 # ---
 
 # # FCUL ALS Model Interpretability
@@ -21,461 +22,364 @@
 #
 # Using different interpretability approaches so as to understand the outputs of the models trained on FCUL's ALS dataset.
 
-# + {"colab_type": "text", "id": "KOdmFzXqF7nq", "cell_type": "markdown"}
+# + [markdown] {"colab_type": "text", "id": "KOdmFzXqF7nq"}
 # ## Importing the necessary packages
 
 # + {"colab": {}, "colab_type": "code", "id": "G5RrWE9R_Nkl"}
-import pandas as pd              # Pandas to handle the data in dataframes
-import re                        # re to do regex searches in string data
-import plotly                    # Plotly for interactive and pretty plots
-import plotly.graph_objs as go
-import os                        # os handles directory/workspace changes
-import numpy as np               # NumPy to handle numeric and NaN operations
-from tqdm import tqdm_notebook   # tqdm allows to track code execution progress
-import torch                     # PyTorch to create and apply deep learning models
-from torch.utils.data.sampler import SubsetRandomSampler
-import shap                      # Model-agnostic interpretability package inspired on Shapley values
-import pickle                    # Save python objects in files
-from datetime import datetime    # datetime to use proper date and time formats
-import data_utils as du          # Data science and machine learning relevant methods
-from ModelInterpreter import ModelInterpreter # Class that enables the interpretation of models that handle variable sequence length input data
+import os                                  # os handles directory/workspace changes
+import torch                               # PyTorch to create and apply deep learning models
+import xgboost as xgb                      # Gradient boosting trees models
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+import joblib                              # Save and load scikit-learn models in disk
+import pickle                              # Save python objects in files
+import yaml                                # Save and load YAML files
+from datetime import datetime              # datetime to use proper date and time formats
+from ipywidgets import interact            # Display selectors and sliders
+import shap                                # Model-agnostic interpretability package inspired on Shapley values
+import plotly.graph_objs as go             # Plotly for interactive and pretty plots
+from model_interpreter.model_interpreter import ModelInterpreter # Class that enables the interpretation of models that handle variable sequence length input data
 # -
 
-# Debugging packages
-import pixiedust                 # Debugging in Jupyter Notebook cells
-import numpy as np               # Math operations with NumPy to confirm model's behaviour
-import time                      # Calculate code execution time
+import pixiedust                           # Debugging in Jupyter Notebook cells
 
-# +
+# Path to the parquet dataset files
+data_path = 'Datasets/Thesis/FCUL_ALS/cleaned/'
+# Path to the data + SHAP values dataframes
+data_n_shap_path = 'Datasets/Thesis/FCUL_ALS/interpreted/'
+# Path to the code files
+project_path = 'GitHub/FCUL_ALS_Disease_Progression/'
+# Path to the models
+models_path = f'{project_path}models/'
+# Path to the model interpreters
+interpreters_path = f'{project_path}interpreters/'
+
+# Change to the scripts directory
+os.chdir("../scripts/")
+import utils                               # Context specific (in this case, for the ALS data) methods
+import Models                              # Deep learning models
 # Change to parent directory (presumably "Documents")
-os.chdir("../..")
+os.chdir("../../..")
+import pandas as pd                        # Pandas to load and handle the data
+import data_utils as du                    # Data science and machine learning relevant methods
 
-# Path to the CSV dataset files
-data_path = 'Datasets/Thesis/FCUL_ALS/'
-
-# + {"colab_type": "text", "id": "bEqFkmlYCGOz", "cell_type": "markdown"}
-# **Important:** Use the following two lines to be able to do plotly plots offline:
-
-# + {"colab": {}, "colab_type": "code", "id": "fZCUmUOzCPeI"}
-import plotly.offline as py
-plotly.offline.init_notebook_mode(connected=True)
-
-
-# + {"colab_type": "text", "id": "Yrzi8YbzDVTH", "cell_type": "markdown"}
-# **Important:** The following function is needed in every Google Colab cell that contains a Plotly chart:
-
-# + {"colab": {}, "colab_type": "code", "id": "wxyGCedgC6bX"}
-def configure_plotly_browser_state():
-    import IPython
-    display(IPython.core.display.HTML('''
-        <script src="/static/components/requirejs/require.js"></script>
-        <script>
-          requirejs.config({
-            paths: {
-              base: '/static/base',
-              plotly: 'https://cdn.plot.ly/plotly-latest.min.js?noext',
-            },
-          });
-        </script>
-        '''))
-
-
+# + {"Collapsed": "false"}
+du.set_pandas_library(lib='pandas')
 # -
 
-# Set random seed to the specified value
+# Allow pandas to show more columns:
+
+pd.set_option('display.max_columns', 3000)
+pd.set_option('display.max_rows', 3000)
+
+# Set the random seed for reproducibility:
+
 du.set_random_seed(42)
 
-# Sequence and instance identifier columns' numbers
-id_column = 0
-inst_column = 1
+# ## Initializing variables
 
-# ## Loading data and model
+# Dataset parameters:
 
-# Read the data (already processed, just like the model trained on)
-ALS_df = pd.read_csv(f'{data_path}cleaned/FCUL_ALS_cleaned.csv')
+id_column = 'subject_id'                   # Name of the sequence ID column
+ts_column = 'ts'                           # Name of the timestamp column
+label_column = 'niv_label'                 # Name of the label column
+padding_value = 999999                     # Padding value used to fill in sequences up to the maximum sequence length
+
+# One hot encoding columns categorization:
+
+stream_categ_feat_ohe = open(f'{data_path}categ_feat_ohe.yml', 'r')
+
+categ_feat_ohe = yaml.load(stream_categ_feat_ohe, Loader=yaml.FullLoader)
+categ_feat_ohe
+
+list(categ_feat_ohe.keys())
+
+# + [markdown] {"Collapsed": "false"}
+# Dataloaders parameters:
+# -
+
+test_train_ratio = 0.25                    # Percentage of the data which will be used as a test set
+validation_ratio = 0.1                     # Percentage of the data from the training set which is used for validation purposes
+batch_size = 32                            # Number of unit stays in a mini batch
+
+# Model to interpret:
+
+model_filename = None                      # Name of the file containing the model that will be loaded
+model_class = None                         # Python class name that corresponds to the chosen model's type
+model = None                               # Machine learning model object
+dataset_mode = 'one hot encoded'           # The mode in which we'll use the data, either one hot encoded or pre-embedded
+ml_core = 'deep learning'                  # The core machine learning type we'll use; either traditional ML or DL
+use_delta_ts = False                       # Indicates if we'll use time variation info
+time_window_days = 90                      # Number of days on which we want to predict NIV
+is_custom = False                          # Indicates if the model being used is a custom built one
+@interact
+def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer',
+                                 'Bidirectional RNN with embedding layer and delta_ts',
+                                 'Bidirectional LSTM with delta_ts',
+                                 'Regular LSTM',
+                                 'MF1-LSTM',
+                                 'XGBoost',
+                                 'Logistic regression']):
+    global model_filename, model_class, model, dataset_mode, ml_core, use_delta_ts, time_window_days, is_custom
+    if model_name == 'Bidirectional LSTM with embedding layer':
+        # Set the model file and class names, then load the model
+        model_filename = 'lstm_bidir_pre_embedded_90dayswindow_0.2490valloss_06_07_2020_03_47.pth'
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'Bidirectional RNN with embedding layer and delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = 'rnn_bidir_pre_embedded_delta_ts_90dayswindow_0.3059valloss_06_07_2020_03_10.pth'
+        model_class = 'VanillaRNN'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'Bidirectional LSTM with delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = 'lstm_bidir_pre_embedded_delta_ts_90dayswindow_0.3481valloss_06_07_2020_04_15.pth'
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'Regular LSTM':
+        # Set the model file and class names, then load the model
+        model_filename = 'lstm_one_hot_encoded_90dayswindow_0.4363valloss_06_07_2020_03_28.pth'
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'MF1-LSTM':
+        # Set the model file and class names, then load the model
+        model_filename = 'mf1lstm_one_hot_encoded_90dayswindow_0.6009valloss_07_07_2020_03_46.pth'
+        model_class = 'MF1LSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'XGBoost':
+        # Set the model file and class names, then load the model
+        model_filename = 'xgb_0.5926valloss_09_07_2020_02_40.pth'
+        model_class = 'XGBoost'
+        model = xgb.XGBClassifier()
+        model.load_model(f'{models_path}{model_filename}')
+        # Set as a traditional ML model
+        ml_core = 'machine learning'
+    elif model_name == 'Logistic regression':
+        # Set the model file and class names, then load the model
+        model_filename = 'logreg_0.6210valloss_09_07_2020_02_54.pth'
+        model_class = 'logreg'
+        model = joblib.load(f'{models_path}{model_filename}')
+        # Set as a traditional ML model
+        ml_core = 'machine learning'
+    print(model)
+
+
+# ## Loading the data
+
+ALS_df = pd.read_csv(f'{data_path}FCUL_ALS_cleaned.csv')
 ALS_df.head()
 
-# Read the original data (before normalization)
-orig_ALS_df = pd.read_csv(f'{data_path}cleaned/FCUL_ALS_cleaned_denorm.csv')
-orig_ALS_df.head()
+# Remove the `Unnamed: 0` column:
 
-# Drop the unnamed index column
-ALS_df.drop(columns=['Unnamed: 0', 'niv'], inplace=True)
-ALS_df.head()
+ALS_df.drop(columns=['Unnamed: 0'], inplace=True)
 
-orig_ALS_df.niv_label.value_counts()
+ALS_df.columns
 
-# Drop the unnamed index and label columns in the original dataframe
-orig_ALS_df.drop(columns=['Unnamed: 0', 'niv_label', 'niv'], inplace=True)
-orig_ALS_df.head()
+len(ALS_df.columns)
 
-ALS_df.describe().transpose()
+# Find the maximum sequence length, so that the ML models and their related methods can handle all sequences, which have varying sequence lengths:
 
-# +
-# List of used features
-ALS_cols = list(ALS_df.columns)
+total_length = ALS_df.groupby(id_column)[ts_column].count().max()
+total_length
 
-# Remove features that aren't used by the model to predict the label
-for unused_feature in ['subject_id', 'ts', 'niv_label']:
-    ALS_cols.remove(unused_feature)
+# ## Preprocessing data
+
+# Define the label column, in case we're using a time window different than 90 days:
+
+if time_window_days is not 90:
+    # Recalculate the NIV label, based on the chosen time window
+    ALS_df[label_column] = utils.set_niv_label(ALS_df, time_window_days)
+    display(ALS_df.head())
+
+
+# Remove the `niv` column:
+
+ALS_df.drop(columns=['niv'], inplace=True)
+
+# Add the `delta_ts` (time variation between samples) if required:
+
+# + {"pixiedust": {"displayParams": {"handlerId": "tableView"}}}
+if use_delta_ts is not False:
+    # Create a time variation column
+    ALS_df['delta_ts'] = ALS_df.groupby(id_column).ts.diff()
+    # Fill all the delta_ts missing values (the first value in a time series) with zeros
+    ALS_df['delta_ts'] = ALS_df['delta_ts'].fillna(0)
+if use_delta_ts == 'normalized':
+    # Normalize the time variation data
+    # NOTE: When using the MF2-LSTM model, since it assumes that the time
+    # variation is in days, we shouldn't normalize `delta_ts` with this model.
+    ALS_df['delta_ts'] = (ALS_df['delta_ts'] - ALS_df['delta_ts'].mean()) / ALS_df['delta_ts'].std()
+if use_delta_ts is not False:
+    display(ALS_df.head())
 # -
 
-ALS_cols
+# Convert into a padded tensor:
 
-# Load the model with the best validation performance
-model = du.deep_learning.load_checkpoint('GitHub/FCUL_ALS_Disease_Progression/models/checkpoint_07_06_2019_23_14.pth',
-                                         ModelClass)
-model
+data = du.padding.dataframe_to_padded_tensor(ALS_df, padding_value=padding_value,
+                                             label_column=label_column, inplace=True)
+data
 
-# ## Getting train and test sets, in tensor format
+# Set the embedding configuration, if needed:
 
-# Dictionary containing the sequence length (number of temporal events) of each sequence (patient)
-seq_len_df = ALS_df.groupby('subject_id').ts.count().to_frame().sort_values(by='ts', ascending=False)
-seq_len_dict = dict([(idx, val[0]) for idx, val in list(zip(seq_len_df.index, seq_len_df.values))])
+# Indices of the ID, timestamp and label columns
+id_column_idx = du.search_explore.find_col_idx(ALS_df, id_column)
+ts_column_idx = du.search_explore.find_col_idx(ALS_df, ts_column)
+label_column_idx = du.search_explore.find_col_idx(ALS_df, label_column)
+print(
+f'''ID index: {id_column_idx}
+Timestamp index: {ts_column_idx}
+Label index: {label_column_idx}'''
+)
 
-# +
-n_patients = ALS_df.subject_id.nunique()     # Total number of patients
-n_inputs = len(ALS_df.columns)               # Number of input features
-padding_value = 0                            # Value to be used in the padding
-
-# Pad data (to have fixed sequence length) and convert into a PyTorch tensor
-data = du.padding.dataframe_to_padded_tensor(ALS_df, seq_len_dict, padding_value=padding_value)
-# -
-
-# Create a Dataset object from the data tensor
-dataset = Time_Series_Dataset(data, ALS_df)
-
-# Get the train, validation and test sets data loaders and indices
-train_dataloader, val_dataloader, test_dataloader, \
-train_indices, val_indices, test_indices            = du.machine_learning.create_train_sets(dataset, test_train_ratio=0.2,
-                                                                                            validation_ratio=0.1,
-                                                                                            batch_size=1000, get_indeces=True)
-
-# Get the tensor data of the training and test sets
-train_features, train_labels = next(iter(train_dataloader))
-test_features, test_labels = next(iter(test_dataloader))
-
-# Get the original lengths of the sequences and sort the data
-train_features, train_labels, x_lengths_train = utils.sort_by_seq_len(train_features, seq_len_dict, labels=train_labels)
-test_features, test_labels, x_lengths_test = utils.sort_by_seq_len(test_features, seq_len_dict, labels=test_labels)
-
-# Create a denormalized version of the feature values so that the plots are easier to understand
-test_features_denorm = utils.denormalize_data(orig_ALS_df, test_features, see_progress=False)
-
-# ## Confirm performance metrics
-
-output, metrics_vals = utils.model_inference(model, seq_len_dict, dataloader=test_dataloader,
-                       metrics=['loss', 'accuracy', 'AUC', 'precision', 'recall', 'F1'], output_rounded=True)
-
-metrics_vals
-
-# ## SHAP
-
-# ### Deep Explainer
-
-# + {"pixiedust": {"displayParams": {}}}
-# Use the first n_bkgnd_samples training examples as our background dataset to integrate over
-# (Ignoring the first 2 features, as they constitute the identifiers 'subject_id' and 'ts')
-n_bkgnd_samples = 200
-explainer = shap.DeepExplainer(model, train_features[:n_bkgnd_samples, :, 2:].float(), feedforward_args=[x_lengths_train[:n_bkgnd_samples]])
-
-# + {"pixiedust": {"displayParams": {}}}
-start_time = time.time()
-# Explain the predictions of the first n_samples patients in the test set
-n_samples = 10
-shap_values = explainer.shap_values(test_features[:n_samples, :, 2:].float(),
-                                    feedforward_args=[x_lengths_train[:n_bkgnd_samples], x_lengths_test[:n_samples]],
-                                    var_seq_len=True)
-print(f'Calculation of SHAP values took {time.time() - start_time} seconds')
-# -
-
-explainer.expected_value[0]
-
-# Choosing which example to use
-subject_id = 39
-patient = utils.find_subject_idx(test_features_denorm, subject_id=subject_id)
-patient
-
-# +
-# Init the JS visualization code
-shap.initjs()
-
-# Choosing which example to use
-ts = 9
-
-# Plot the explanation of one prediction
-shap.force_plot(explainer.expected_value[0], shap_values[patient][ts], features=test_features[patient, ts, 2:].numpy(), feature_names=ALS_cols)
-# -
-
-test_features_denorm.shape
-
-len(orig_ALS_df.columns)
-
-# +
-# Init the JS visualization code
-shap.initjs()
-
-# Choosing which example to use
-patient = 0
-ts = 1
-
-# Plot the explanation of one prediction
-shap.force_plot(explainer.expected_value[0], shap_values[patient][ts], features=test_features_denorm[patient, ts, 2:].numpy(), feature_names=ALS_cols)
-# + {}
-# Init the JS visualization code
-shap.initjs()
-
-# Choosing which example to use
-patient = 0
-
-# True sequence length of the current patient's data
-seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
-
-# Plot the explanation of the predictions for one patient
-shap.force_plot(explainer.expected_value[0], shap_values[patient, :seq_len], features=test_features_denorm[patient, :seq_len, 2:].numpy(), feature_names=ALS_cols)
-# -
-# Summarize the effects of all the features
-shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_features_denorm[:n_samples, :, 2:].contiguous().view(-1, model.lstm.input_size).numpy(), feature_names=ALS_cols)
-
-# Summarize the effects of all the features
-shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_features_denorm[:, :, 2:].view(-1, model.lstm.input_size).numpy(), feature_names=ALS_cols, plot_type='bar')
-
-# Summarize the effects of all the features
-shap.summary_plot(shap_values.reshape(-1, model.lstm.input_size), features=test_features_denorm[:n_samples, :, 2:].contiguous().view(-1, model.lstm.input_size).numpy(), feature_names=ALS_cols, plot_type='violin')
-
-# **Comments:**
-#
-# [Before removing padings from data]
-# * The SHAP values are significantly higher than what I usually see (tends to be between -1 and 1, not between -100000 and 250000). It seems to be because of the padding (the padding value is 999999).
-# * The output values also seem to be wrong in the patients' force plot, as it goes above 1 instead of matching the original output values.
-#
-# [After removing padings from data]
-# * The SHAP values now seem to have normal values (between -1 and 1) and the plots also look good. However, the sum of the contributions still doesn't add up to the original output values.
-
-# ### Kernel Explainer
-
-# Use a single all zeroes sample as a reference value
-num_id_features = sum([1 if i is not None else 0 for i in [id_column, inst_column]])
-bkgnd_data = np.zeros((1, len(ALS_cols)+num_id_features))
-
-# Convert the test data into a 2D NumPy matrix
-test_data = utils.ts_tensor_to_np_matrix(test_features, list(range(2, len(ALS_df.columns)-1)), padding_value)
-
-from ModelInterpreter import KernelFunction
-
-# Create a function that represents the model's feedforward operation on a single instance
-kf = KernelFunction(model)
-
-# Use the background dataset to integrate over
-explainer = shap.KernelExplainer(kf.f, bkgnd_data, isRNN=True, model_obj=model, max_bkgnd_samples=100,
-                                 id_col_num=id_column, ts_col_num=inst_column)
-
-# Explain the predictions of the sequences in the test set
-feat_scores = explainer.shap_values(test_data, l1_reg='num_features(10)', nsamples=3000)
-
-# Summarize the effects of all the features
-shap.summary_plot(feat_scores.reshape(-1, model.lstm.input_size),
-                  features=test_features_denorm[:, :, 2:].view(-1, model.lstm.input_size).numpy(),
-                  feature_names=ALS_cols, plot_type='bar')
-
-# Summarize the effects of all the features
-shap.summary_plot(interpreter.feat_scores.reshape(-1, model.lstm.input_size),
-                  features=test_features_denorm[:, :interpreter.feat_scores.shape[1], 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy(),
-                  feature_names=ALS_cols, plot_type='violin')
-
-# Choosing which example to use
-subject_id = 125
-patient = utils.find_subject_idx(test_features_denorm, subject_id=subject_id)
-patient
-
-# +
-# Init the JS visualization code
-shap.initjs()
-
-# True sequence length of the current patient's data
-seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
-
-# Plot the explanation of the predictions for one patient
-shap.force_plot(interpreter.explainer.expected_value[0],
-                interpreter.feat_scores[patient, :seq_len],
-                features=test_features_denorm[patient, :seq_len, 2:].numpy(),
-                feature_names=ALS_cols)
-# + {}
-# Init the JS visualization code
-shap.initjs()
-
-# Choosing which timestamp to use
-ts = 9
-
-# Plot the explanation of one prediction
-shap.force_plot(interpreter.explainer.expected_value[0],
-                interpreter.feat_scores[patient][ts],
-                features=test_features_denorm[patient, ts, 2:].numpy(),
-                feature_names=ALS_cols)
-# -
-# ## Model Interpreter
-#
-# Using my custom class for model interpretability through instance and feature importance.
-
-# + {"pixiedust": {"displayParams": {}}}
-interpreter = ModelInterpreter(model, ALS_df, label_column=n_inputs-1, fast_calc=True, SHAP_bkgnd_samples=3000, padding_value=999999)
-
-# + {"pixiedust": {"displayParams": {}}}
-# Number of patients to analyse
-# n_patients = 1
-
-# _ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features[:n_patients], test_labels=test_labels[:n_patients], instance_importance=False, feature_importance=True)
-_ = interpreter.interpret_model(bkgnd_data=train_features, test_data=test_features, test_labels=test_labels, instance_importance=True, feature_importance=False)
-
-# +
-# Get the current day and time to attach to the saved model's name
-current_datetime = datetime.now().strftime('%d_%m_%Y_%H_%M')
-
-# Path where the model interpreter will be saved
-interpreter_path = 'GitHub/FCUL_ALS_Disease_Progression/interpreters/'
-
-# Filename and path where the model will be saved
-interpreter_filename = f'{interpreter_path}checkpoint_{current_datetime}.pickle'
-
-# Save model interpreter object, with the instance and feature importance scores, in a pickle file
-with open(interpreter_filename, 'wb') as file:
-    pickle.dump(interpreter, file)
-# -
-
-# Load saved model interpreter object
-# with open(interpreter_filename, 'rb') as file:
-with open('GitHub/FCUL_ALS_Disease_Progression/interpreters/checkpoint_10_07_2019_05_23.pickle', 'rb') as file:
-    interpreter_loaded = pickle.load(file)
-
-if np.array_equal(interpreter_loaded.feat_scores, interpreter.feat_scores):
-    print('The model interpreter object was correctly saved.')
-    interpreter = interpreter_loaded
+if dataset_mode == 'one hot encoded':
+    embed_features = None
 else:
-    print('ERROR: There was a problem saving the model interpreter object.')
+    embed_features = list()
+    if len(categ_feat_ohe.keys()) == 1:
+        for ohe_feature in list(categ_feat_ohe.values())[0]:
+            # Find the current feature's index so as to be able to use it as a tensor
+            feature_idx = du.search_explore.find_col_idx(ALS_df, ohe_feature)
+            # Decrease the index number if it's larger than the label column (which will be removed)
+            if feature_idx > label_column_idx:
+                feature_idx = feature_idx - 1
+            embed_features.append(feature_idx)
+    else:
+        for i in range(len(categ_feat_ohe.keys())):
+            tmp_list = list()
+            for ohe_feature in list(categ_feat_ohe.values())[i]:
+                # Find the current feature's index so as to be able to use it as a tensor
+                feature_idx = du.search_explore.find_col_idx(ALS_df, ohe_feature)
+                # Decrease the index number if it's larger than the label column (which will be removed)
+                if feature_idx > label_column_idx:
+                    feature_idx = feature_idx - 1
+                tmp_list.append(feature_idx)
+            # Add the current feature's list of one hot encoded columns
+            embed_features.append(tmp_list)
+print(f'Embedding features: {embed_features}')
 
-# Only to use when analysing a model interpreter, after having already been saved
-interpreter = interpreter_loaded
+# ## Defining the dataset object
 
-# ### Feature importance plots
+dataset = du.datasets.Time_Series_Dataset(ALS_df, data, padding_value=padding_value,
+                                          label_name=label_column)
 
-interpreter.feat_scores
-
-# Summarize the effects of all the features
-shap.summary_plot(interpreter.feat_scores.reshape(-1, interpreter.model.lstm.input_size),
-                  features=test_features_denorm[:, :, 2:].view(-1, interpreter.model.lstm.input_size).numpy(),
-                  feature_names=ALS_cols, plot_type='bar')
-
-interpreter.feat_scores.reshape(-1, model.lstm.input_size).shape
-
-test_features_denorm[:, :, 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy().shape
-
-# Summarize the effects of all the features
-shap.summary_plot(interpreter.feat_scores.reshape(-1, model.lstm.input_size),
-                  features=test_features_denorm[:, :interpreter.feat_scores.shape[1], 2:].contiguous().view(-1, interpreter.model.lstm.input_size).numpy(),
-                  feature_names=ALS_cols, plot_type='violin')
-
-# **Comments:**
-#
-# With the current SHAP Kernel Explainer, this plot seems to make sense. However, if not enough samples are used, there isn't much distinction between actually important features and not so relevant ones.
-
-# Choosing which example to use
-subject_id = 125
-patient = utils.find_subject_idx(test_features_denorm, subject_id=subject_id)
-patient
-
-# +
-# Init the JS visualization code
-shap.initjs()
-
-# True sequence length of the current patient's data
-seq_len = seq_len_dict[test_features_denorm[patient, 0, 0].item()]
-
-# Plot the explanation of the predictions for one patient
-shap.force_plot(interpreter.explainer.expected_value[0],
-                interpreter.feat_scores[patient, :seq_len],
-                features=test_features_denorm[patient, :seq_len, 2:].numpy(),
-                feature_names=ALS_cols)
-# + {}
-# Init the JS visualization code
-shap.initjs()
-
-# Choosing which timestamp to use
-ts = 9
-
-# Plot the explanation of one prediction
-shap.force_plot(interpreter.explainer.expected_value[0],
-                interpreter.feat_scores[patient][ts],
-                features=test_features_denorm[patient, ts, 2:].numpy(),
-                feature_names=ALS_cols)
-# -
-# **Comments:**
-#
-# With the current SHAP Kernel Explainer, the sum of the contributions match the real output values. As such, it's possible to see how each sequence's output progresses and why (which features had the biggest positive or negative impact).
-#
-# Although the top features can vary a bit in their ranking when using different quantities of background data and nsamples, as well as having a very small importance difference between them, it appears to increasingly resemble the real behaviour of the model (with increasing background samples). Furthermore, despite the Deep Explainer having issues in matching the original output values, it showed a similar feature importance ranking.
-#
-# Since this data is processed to have 0 as missing value in categorical features and as the mean in continuous features, if the only background data used is an all zeroes samples, it's possible to do more nsamples in a faster way and achieve a more truthful interpreter.
-#
-# [TODO] Make sure that a model interpreter trained on very big quantities of background data and nsamples closely resembles the results achieved with an all zeroes sample.
-
-ref_output = interpreter.model(test_features[patient, :, 2:].float().unsqueeze(0), [x_lengths_test[patient]])
-
-ref_output_s = pd.Series([float(x) for x in list(ref_output.detach().numpy())])
-
-# Get an overview of the important features and model output for the current patient
-orig_ALS_df[orig_ALS_df.subject_id == subject_id][['ts', 'p0.1', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9',
-                                                   'p10', '1r', '2r', '3r', 'phrenmeanampl', 'mip']] \
-                                                 .reset_index().drop(columns='index').assign(output=ref_output_s)
-
-# ### Instance importance plots
-
-interpreter.inst_scores
-
-interpreter.inst_scores.shape
-
-# interpreter_loaded.inst_scores[interpreter_loaded.inst_scores == interpreter_loaded.padding_value]
-interpreter.inst_scores[interpreter.inst_scores == 999999] = np.nan
-interpreter.inst_scores
-
-inst_scores_avg = np.nanmean(interpreter.inst_scores, axis=0)
-
-list(range(1, len(inst_scores_avg)+1))
-
-data = [go.Bar(
-                x=list(range(1, len(inst_scores_avg[:20])+1)),
-                y=list(inst_scores_avg[:20])
-              )]
-layout = go.Layout(
-                    title='Average instance importance scores',
-                    xaxis=dict(title='Instance'),
-                    yaxis=dict(title='Importance scores')
-                  )
-fig = go.Figure(data=data, layout=layout)
-py.iplot(fig, filename='basic-bar')
-
-# +
-# True sequence length of the current patient's data
-seq_len = seq_len_dict[test_features[patient, 0, 0].item()]
-
-# Plot the instance importance of one sequence
-interpreter.instance_importance_plot(test_features, interpreter.inst_scores, patient, seq_len)
+# + {"Collapsed": "false"}
+dataset.__len__()
 # -
 
-ref_output = interpreter.model(test_features[patient, :, 2:].float().unsqueeze(0), [x_lengths_test[patient]])
-ref_output
+# ## Separating into train and validation sets
 
-ref_output[-1].item()
+(train_dataloader, val_dataloader, test_dataloader,
+train_indeces, val_indeces, test_indeces) = du.machine_learning.create_train_sets(dataset,
+                                                                                  test_train_ratio=test_train_ratio,
+                                                                                  validation_ratio=validation_ratio,
+                                                                                  batch_size=batch_size,
+                                                                                  get_indices=True)
 
-n_patients
+# Get the full arrays of each set
+train_features, train_labels = dataset.X[train_indeces], dataset.y[train_indeces]
+val_features, val_labels = dataset.X[val_indeces], dataset.y[val_indeces]
+test_features, test_labels = dataset.X[test_indeces], dataset.y[test_indeces]
 
-pred_prob, _ = utils.model_inference(interpreter.model, interpreter.seq_len_dict, data=(test_features[:n_patients], test_labels[:n_patients]),
-                                     metrics=[''], seq_final_outputs=True)
-pred_prob
+# Ignore the dataloaders, we only care about the full arrays when using scikit-learn or XGBoost
+del train_dataloader
+del val_dataloader
+del test_dataloader
 
-pred_prob.shape
+if ml_core == 'machine learning':
+    # Remove the ID and timestamp columns from the data arrays
+    train_features = train_features[:, :, 2:]
+    val_features = val_features[:, :, 2:]
+    test_features = test_features[:, :, 2:]
+    # Reshape the data into a 2D format
+    train_features = train_features.reshape(-1, train_features.shape[-1])
+    val_features = val_features.reshape(-1, val_features.shape[-1])
+    test_features = test_features.reshape(-1, test_features.shape[-1])
+    train_labels = train_labels.reshape(-1)
+    val_labels = val_labels.reshape(-1)
+    test_labels = test_labels.reshape(-1)
+    # Remove padding samples from the data
+    train_features = train_features[[padding_value not in row for row in train_features]]
+    val_features = val_features[[padding_value not in row for row in val_features]]
+    test_features = test_features[[padding_value not in row for row in test_features]]
+    train_labels = train_labels[[padding_value not in row for row in train_labels]]
+    val_labels = val_labels[[padding_value not in row for row in val_labels]]
+    test_labels = test_labels[[padding_value not in row for row in test_labels]]
+    # Convert from PyTorch tensor to NumPy array
+    train_features = train_features.numpy()
+    val_features = val_features.numpy()
+    test_features = test_features.numpy()
+    train_labels = train_labels.numpy()
+    val_labels = val_labels.numpy()
+    test_labels = test_labels.numpy()
 
-test_features[:n_patients].shape
+# ## Interpreting the model
 
-interpreter.inst_scores.shape
+test_features.shape
 
-interpreter.instance_importance_plot(test_features[:n_patients], interpreter.inst_scores[:n_patients], pred_prob=pred_prob)
+# Define the interpreter:
+
+if ml_core == 'deep learning':
+    # Calculating the number of times to re-evaluate the model when explaining each prediction,
+    # based on SHAP's formula of nsamples = 2 * n_features + 2048
+    SHAP_bkgnd_samples = 2 * test_features.shape[-1] + 2048
+    print(SHAP_bkgnd_samples)
+
+if ml_core == 'deep learning':
+    interpreter = ModelInterpreter(model, ALS_df, model_type='multivariate_rnn', id_column=0, 
+                                   inst_column=1, fast_calc=True, SHAP_bkgnd_samples=SHAP_bkgnd_samples,
+                                   random_seed=du.random_seed, padding_value=padding_value,
+                                   is_custom=is_custom, total_length=total_length)
+# else:
+
+
+# Calculate the feature importance scores (through SHAP values):
+
+if ml_core == 'deep learning':
+    _ = interpreter.interpret_model(test_data=test_features[:5],
+                                    test_labels=test_labels[:5],
+                                    instance_importance=False, 
+                                    feature_importance='shap')
+# else:
+
+
+if ml_core == 'deep learning':
+    print(interpreter.explainer.expected_value)
+else:
+    print(explainer.expected_value)
+
+# ## Saving a dataframe with the resulting SHAP values
+
+interpreter.feat_scores.shape
+
+du.visualization.shap_summary_plot(interpreter.feat_scores, interpreter.feat_names, max_display=15)
+
+du.visualization.shap_waterfall_plot(interpreter.explainer.expected_value[0], interpreter.feat_scores[0, 2, :], 
+                                     interpreter.test_data[0, 2, 2:], interpreter.feat_names)
+
+if ml_core == 'deep learning':
+    data_n_shap_df = interpreter.shap_values_df()
+    data_n_shap_df.head()
+# else:
+
+
+data_n_shap_df.to_csv(f'{data_n_shap_path}fcul_als_with_shap_for_{model_filename}.csv')

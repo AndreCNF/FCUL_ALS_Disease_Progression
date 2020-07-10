@@ -28,8 +28,7 @@
 # + {"colab": {}, "colab_type": "code", "id": "G5RrWE9R_Nkl"}
 import pandas as pd                        # Pandas to handle the data in dataframes
 import re                                  # re to do regex searches in string data
-import plotly                              # Plotly for interactive and pretty plots
-import plotly.graph_objs as go
+import plotly.graph_objs as go             # Plotly for interactive and pretty plots
 from datetime import datetime              # datetime to use proper date and time formats
 import os                                  # os handles directory/workspace changes
 import numpy as np                         # NumPy to handle numeric and NaN operations
