@@ -27,6 +27,7 @@
 
 # + {"colab": {}, "colab_type": "code", "id": "G5RrWE9R_Nkl"}
 import os                                  # os handles directory/workspace changes
+import numpy as np                         # NumPy to handle numeric and NaN operations
 import torch                               # PyTorch to create and apply deep learning models
 import xgboost as xgb                      # Gradient boosting trees models
 from sklearn.linear_model import LogisticRegression
@@ -76,6 +77,11 @@ pd.set_option('display.max_rows', 3000)
 
 du.set_random_seed(42)
 
+# Allow Jupyter Lab to display all outputs:
+
+from IPython.core.interactiveshell import InteractiveShell
+InteractiveShell.ast_node_interactivity = "all"
+
 # ## Initializing variables
 
 # Dataset parameters:
@@ -93,6 +99,21 @@ categ_feat_ohe = yaml.load(stream_categ_feat_ohe, Loader=yaml.FullLoader)
 categ_feat_ohe
 
 list(categ_feat_ohe.keys())
+
+# Normalization stats (allow us to get back the original values, to display in the interpretability plots):
+
+stream_norm_stats = open(f'{data_path}norm_stats.yml', 'r')
+
+norm_stats = yaml.load(stream_norm_stats, Loader=yaml.FullLoader)
+norm_stats
+
+list(norm_stats.keys())
+
+means = dict([(feat, norm_stats[feat]['mean']) for feat in norm_stats])
+means
+
+stds = dict([(feat, norm_stats[feat]['std']) for feat in norm_stats])
+stds
 
 # + [markdown] {"Collapsed": "false"}
 # Dataloaders parameters:
@@ -186,6 +207,14 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer',
 
 # ## Loading the data
 
+# Original data:
+
+orig_ALS_df = pd.read_csv(f'{data_path}FCUL_ALS_cleaned_denorm.csv')
+orig_ALS_df.drop(columns=['Unnamed: 0'], inplace=True)
+orig_ALS_df.head()
+
+# Preprocessed data:
+
 ALS_df = pd.read_csv(f'{data_path}FCUL_ALS_cleaned.csv')
 ALS_df.head()
 
@@ -277,6 +306,14 @@ else:
             embed_features.append(tmp_list)
 print(f'Embedding features: {embed_features}')
 
+# Gather the feature names:
+
+feature_columns = list(ALS_df.columns)
+feature_columns.remove('niv_label')
+if ml_core == 'machine learning':
+    feature_columns.remove('subject_id')
+    feature_columns.remove('ts')
+
 # ## Defining the dataset object
 
 dataset = du.datasets.Time_Series_Dataset(ALS_df, data, padding_value=padding_value,
@@ -299,6 +336,7 @@ train_indeces, val_indeces, test_indeces) = du.machine_learning.create_train_set
 train_features, train_labels = dataset.X[train_indeces], dataset.y[train_indeces]
 val_features, val_labels = dataset.X[val_indeces], dataset.y[val_indeces]
 test_features, test_labels = dataset.X[test_indeces], dataset.y[test_indeces]
+all_features, all_labels = dataset.X, dataset.y
 
 # Ignore the dataloaders, we only care about the full arrays when using scikit-learn or XGBoost
 del train_dataloader
@@ -306,42 +344,89 @@ del val_dataloader
 del test_dataloader
 
 if ml_core == 'machine learning':
-    # Remove the ID and timestamp columns from the data arrays
-    train_features = train_features[:, :, 2:]
-    val_features = val_features[:, :, 2:]
-    test_features = test_features[:, :, 2:]
     # Reshape the data into a 2D format
     train_features = train_features.reshape(-1, train_features.shape[-1])
     val_features = val_features.reshape(-1, val_features.shape[-1])
     test_features = test_features.reshape(-1, test_features.shape[-1])
+    all_features = all_features.reshape(-1, all_features.shape[-1])
     train_labels = train_labels.reshape(-1)
     val_labels = val_labels.reshape(-1)
     test_labels = test_labels.reshape(-1)
+    all_labels = all_labels.reshape(-1)
     # Remove padding samples from the data
     train_features = train_features[[padding_value not in row for row in train_features]]
     val_features = val_features[[padding_value not in row for row in val_features]]
     test_features = test_features[[padding_value not in row for row in test_features]]
+    all_features = all_features[[padding_value not in row for row in all_features]]
     train_labels = train_labels[[padding_value not in row for row in train_labels]]
     val_labels = val_labels[[padding_value not in row for row in val_labels]]
     test_labels = test_labels[[padding_value not in row for row in test_labels]]
+    all_labels = all_labels[[padding_value not in row for row in all_labels]]
     # Convert from PyTorch tensor to NumPy array
     train_features = train_features.numpy()
     val_features = val_features.numpy()
     test_features = test_features.numpy()
+    all_features = all_features.numpy()
     train_labels = train_labels.numpy()
     val_labels = val_labels.numpy()
     test_labels = test_labels.numpy()
+    all_labels = all_labels.numpy()
+
+# Get the original, denormalized test data:
+
+# + {"pixiedust": {"displayParams": {}}}
+if ml_core == 'deep learning':
+    denorm_data = du.data_processing.denormalize_data(ALS_df, data=all_features, 
+                                                      id_columns=['subject_id', 'ts'],
+                                                      feature_columns=feature_columns,
+                                                      means=means, stds=stds,
+                                                      see_progress=False)
+else:
+    denorm_data = du.data_processing.denormalize_data(ALS_df, data=all_features[:, 2:], 
+                                                      id_columns=None,
+                                                      feature_columns=feature_columns,
+                                                      means=means, stds=stds,
+                                                      see_progress=False)
+# -
+
+# Testing the denormalization (getting the original values back):
+
+# + {"pixiedust": {"displayParams": {}}}
+if ml_core == 'deep learning':
+    print(denorm_data[0, 0])
+else:
+    print(denorm_data[0])
+
+# + {"pixiedust": {"displayParams": {"handlerId": "tableView"}}}
+if ml_core == 'deep learning':
+    orig_ALS_df[(orig_ALS_df.subject_id == int(all_features[0, 0, 0])) & (orig_ALS_df.ts == int(all_features[0, 0, 1]))]
+else:
+    orig_ALS_df[(orig_ALS_df.subject_id == 2) & (orig_ALS_df.ts == 27)]
+# -
+
+if ml_core == 'deep learning':
+    print(orig_ALS_df[
+            (orig_ALS_df.subject_id == int(all_features[0, 0, 0])) 
+            & (orig_ALS_df.ts == int(all_features[0, 0, 1]))
+        ].drop(columns=['niv', 'niv_label']).values == denorm_data[0, 0].numpy())
+else:
+    print(orig_ALS_df[
+            (orig_ALS_df.subject_id == 2) 
+            & (orig_ALS_df.ts == 27)
+        ].drop(columns=['subject_id', 'ts', 'niv', 'niv_label']).values == denorm_data[0])
 
 # ## Interpreting the model
 
-test_features.shape
+all_features.shape
 
 # Define the interpreter:
 
 if ml_core == 'deep learning':
     # Calculating the number of times to re-evaluate the model when explaining each prediction,
     # based on SHAP's formula of nsamples = 2 * n_features + 2048
-    SHAP_bkgnd_samples = 2 * test_features.shape[-1] + 2048
+    SHAP_bkgnd_samples = 2 * all_features.shape[-1] + 2048
+#     SHAP_bkgnd_samples = 2 * test_features.shape[-1]
+#     SHAP_bkgnd_samples = 200
     print(SHAP_bkgnd_samples)
 
 if ml_core == 'deep learning':
@@ -349,37 +434,82 @@ if ml_core == 'deep learning':
                                    inst_column=1, fast_calc=True, SHAP_bkgnd_samples=SHAP_bkgnd_samples,
                                    random_seed=du.random_seed, padding_value=padding_value,
                                    is_custom=is_custom, total_length=total_length)
+elif model_class == 'XGBoost':
+    interpreter = shap.TreeExplainer(model)
+interpreter
 # else:
 
 
 # Calculate the feature importance scores (through SHAP values):
 
 if ml_core == 'deep learning':
-    _ = interpreter.interpret_model(test_data=test_features[:5],
-                                    test_labels=test_labels[:5],
-                                    instance_importance=False, 
-                                    feature_importance='shap')
+    feat_scores = interpreter.interpret_model(test_data=all_features,
+                                              test_labels=all_labels,
+                                              instance_importance=False, 
+                                              feature_importance='shap')
+elif model_class == 'XGBoost':
+    feat_scores = interpreter.shap_values(all_features)
 # else:
 
 
+# Get the expected value:
+
 if ml_core == 'deep learning':
-    print(interpreter.explainer.expected_value)
+    expected_value = interpreter.explainer.expected_value[0]
 else:
-    print(explainer.expected_value)
+    expected_value = interpreter.expected_value
+print(f'Expected value: {expected_value}')
 
 # ## Saving a dataframe with the resulting SHAP values
 
-interpreter.feat_scores.shape
+feat_scores.shape
 
-du.visualization.shap_summary_plot(interpreter.feat_scores, interpreter.feat_names, max_display=15)
+du.visualization.shap_summary_plot(feat_scores, feature_columns, max_display=15)
 
-du.visualization.shap_waterfall_plot(interpreter.explainer.expected_value[0], interpreter.feat_scores[0, 2, :], 
-                                     interpreter.test_data[0, 2, 2:], interpreter.feat_names)
+if ml_core == 'deep learning':
+    du.visualization.shap_waterfall_plot(expected_value, feat_scores[0, 2, :], 
+                                         all_features[0, 2, 2:], feature_columns)
+else:
+    du.visualization.shap_waterfall_plot(expected_value, feat_scores[2, :], 
+                                         all_features[2, :], feature_columns)
+
+if ml_core == 'deep learning':
+    du.visualization.shap_waterfall_plot(expected_value, feat_scores[0, 2, :], 
+                                         denorm_data[0, 2, 2:], feature_columns)
+else:
+    du.visualization.shap_waterfall_plot(expected_value, feat_scores[2, :], 
+                                         denorm_data[2, :], feature_columns)
+
+all_features.shape
+
+all_labels.shape
+
+all_labels.reshape(-1, 1).shape
+
+feat_scores.shape
+
+data_n_shap.shape
+
+len(column_names)
 
 if ml_core == 'deep learning':
     data_n_shap_df = interpreter.shap_values_df()
-    data_n_shap_df.head()
-# else:
+else:
+    # Join the original data and the features' SHAP values
+    data_n_shap = np.concatenate([all_features, all_labels.reshape(-1, 1), feat_scores], axis=1)
+    # Reshape into a 2D format
+    data_n_shap = data_n_shap.reshape(-1, data_n_shap.shape[-1])
+    # Remove padding samples
+    data_n_shap = data_n_shap[[padding_value not in row for row in data_n_shap]]
+    # Define the column names list
+    shap_column_names = [f'{feature}_shap' for feature in feature_columns]
+    column_names = ([id_column] + [ts_column] + feature_columns
+                    + [label_column] + shap_column_names)
+    # Create the dataframe
+    data_n_shap_df = pd.DataFrame(data=data_n_shap, columns=column_names)
+data_n_shap_df.head()
 
 
 data_n_shap_df.to_csv(f'{data_n_shap_path}fcul_als_with_shap_for_{model_filename}.csv')
+
+
