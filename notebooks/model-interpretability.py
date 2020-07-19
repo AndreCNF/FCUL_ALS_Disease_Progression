@@ -8,11 +8,11 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.4.1
+#       jupytext_version: 1.5.0
 #   kernelspec:
-#     display_name: fcul_als_disease_progression
+#     display_name: Python 3
 #     language: python
-#     name: fcul_als_disease_progression
+#     name: python3
 # ---
 
 # # FCUL ALS Model Interpretability
@@ -45,11 +45,11 @@ from model_interpreter.model_interpreter import ModelInterpreter # Class that en
 import pixiedust                           # Debugging in Jupyter Notebook cells
 
 # Path to the parquet dataset files
-data_path = 'Datasets/Thesis/FCUL_ALS/cleaned/'
+data_path = 'data/FCUL_ALS/cleaned/'
 # Path to the data + SHAP values dataframes
-data_n_shap_path = 'Datasets/Thesis/FCUL_ALS/interpreted/'
+data_n_shap_path = 'data/FCUL_ALS/interpreted/'
 # Path to the code files
-project_path = 'GitHub/FCUL_ALS_Disease_Progression/'
+project_path = 'code/FCUL_ALS_Disease_Progression/'
 # Path to the models
 models_path = f'{project_path}models/'
 # Path to the model interpreters
@@ -464,6 +464,10 @@ print(f'Expected value: {expected_value}')
 
 feat_scores.shape
 
+if ml_core == 'deep learning':
+    feature_columns.remove('subject_id')
+    feature_columns.remove('ts')
+
 du.visualization.shap_summary_plot(feat_scores, feature_columns, max_display=15)
 
 if ml_core == 'deep learning':
@@ -479,18 +483,6 @@ if ml_core == 'deep learning':
 else:
     du.visualization.shap_waterfall_plot(expected_value, feat_scores[2, :], 
                                          denorm_data[2, :], feature_columns)
-
-all_features.shape
-
-all_labels.shape
-
-all_labels.reshape(-1, 1).shape
-
-feat_scores.shape
-
-data_n_shap.shape
-
-len(column_names)
 
 if ml_core == 'deep learning':
     data_n_shap_df = interpreter.shap_values_df()
