@@ -164,7 +164,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer',
         is_custom = True
     elif model_name == 'Bidirectional LSTM with delta_ts':
         # Set the model file and class names, then load the model
-        model_filename = 'lstm_bidir_pre_embedded_delta_ts_90dayswindow_0.3481valloss_06_07_2020_04_15.pth'
+        model_filename = 'lstm_bidir_one_hot_encoded_delta_ts_90dayswindow_0.3809valloss_06_07_2020_04_08.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
         # Set the use of delta_ts
@@ -254,12 +254,19 @@ if use_delta_ts is not False:
     # Fill all the delta_ts missing values (the first value in a time series) with zeros
     ALS_df['delta_ts'] = ALS_df['delta_ts'].fillna(0)
 if use_delta_ts == 'normalized':
+    # Add delta_ts' normalization stats to the dictionaries
+    means['delta_ts'] = ALS_df['delta_ts'].mean()
+    stds['delta_ts'] = ALS_df['delta_ts'].std()
     # Normalize the time variation data
     # NOTE: When using the MF2-LSTM model, since it assumes that the time
     # variation is in days, we shouldn't normalize `delta_ts` with this model.
-    ALS_df['delta_ts'] = (ALS_df['delta_ts'] - ALS_df['delta_ts'].mean()) / ALS_df['delta_ts'].std()
+    ALS_df['delta_ts'] = (ALS_df['delta_ts'] - means['delta_ts']) / stds['delta_ts']
+else:
+    # Ignore delta_ts' normalization stats to the dictionaries
+    means['delta_ts'] = 0
+    stds['delta_ts'] = 1
 if use_delta_ts is not False:
-    display(ALS_df.head())
+    ALS_df.head()
 # -
 
 # Convert into a padded tensor:
@@ -374,10 +381,17 @@ if ml_core == 'machine learning':
 
 # Get the original, denormalized test data:
 
+if use_delta_ts is False:
+    # Prevent the identifier columns from being denormalized
+    columns_to_remove = [id_column, ts_column, 'delta_ts']
+else:
+    # Also prevent the time variation column from being denormalized
+    columns_to_remove = [id_column, ts_column]
+
 # + {"pixiedust": {"displayParams": {}}}
 if ml_core == 'deep learning':
     denorm_data = du.data_processing.denormalize_data(ALS_df, data=all_features, 
-                                                      id_columns=['subject_id', 'ts'],
+                                                      id_columns=[id_column, ts_column],
                                                       feature_columns=feature_columns,
                                                       means=means, stds=stds,
                                                       see_progress=False)
