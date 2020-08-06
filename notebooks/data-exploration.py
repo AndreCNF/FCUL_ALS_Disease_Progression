@@ -39,6 +39,13 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import data_utils as du                    # Data science and machine learning relevant methods
 # -
 
+import plotly.io as pio
+pio.templates
+
+# Use Plotly in dark mode:
+
+pio.templates.default = 'plotly_dark'
+
 # Change to parent directory (presumably "Documents")
 os.chdir("../../..")
 # Path to the CSV dataset files
@@ -88,6 +95,12 @@ fig.show()
 
 data = [go.Histogram(x = ALS_proc_df.NIV)]
 layout = go.Layout(title='Number of visits where the patient is using NIV.')
+fig = go.Figure(data, layout)
+fig.show()
+
+ALS_proc_patient_niv_count = ALS_proc_df.groupby('subject_id').niv.max().value_counts().to_frame()
+data = [go.Pie(labels=ALS_proc_patient_niv_count.index, values=ALS_proc_patient_niv_count.niv)]
+layout = go.Layout(title='Patients which eventually use NIV')
 fig = go.Figure(data, layout)
 fig.show()
 
