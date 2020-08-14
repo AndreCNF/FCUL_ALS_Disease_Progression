@@ -90,6 +90,10 @@ ALS_proc_df.describe().transpose()
 
 orig_ALS_df.describe().transpose()
 
+# Number of model features:
+
+len(ALS_proc_df.columns) - 4
+
 # Number of data points (# features x # rows):
 
 len(ALS_proc_df.columns) * len(ALS_proc_df)
@@ -104,6 +108,11 @@ label_count
 all(label_count == orig_ALS_df.niv_label.value_counts())
 
 print(f'{(label_count[True] / (label_count[True] + label_count[False])) * 100}%')
+
+label_per_subject_count = ALS_proc_df.groupby('subject_id').niv_label.max().value_counts()
+label_per_subject_count
+
+print(f'{(label_per_subject_count[True] / (label_per_subject_count[True] + label_per_subject_count[False])) * 100}%')
 
 # How many subjects always have the same label in their time series:
 

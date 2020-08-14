@@ -1,40 +1,28 @@
 # -*- coding: utf-8 -*-
-# # FCUL ALS Model Interpretability
+# # FCUL ALS Performance Testing
 # ---
 #
-# Interpreting models trained on the ALS dataset from Faculdade de Ciências da Universidade de Lisboa (FCUL) with the data from over 1000 patients collected in Portugal.
-#
-# Using different interpretability approaches so as to understand the outputs of the models trained on FCUL's ALS dataset.
+# Testing the models trained on the ALS dataset from Faculdade de Ciências da Universidade de Lisboa (FCUL) with the data from over 1000 patients collected in Portugal.
 
 # ## Importing the necessary packages
 
 import os                                  # os handles directory/workspace changes
 import numpy as np                         # NumPy to handle numeric and NaN operations
 import torch                               # PyTorch to create and apply deep learning models
-import xgboost as xgb                      # Gradient boosting trees models
-from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
-import joblib                              # Save and load scikit-learn models in disk
 import pickle                              # Save python objects in files
 import yaml                                # Save and load YAML files
-from datetime import datetime              # datetime to use proper date and time formats
 from ipywidgets import interact            # Display selectors and sliders
-import shap                                # Model-agnostic interpretability package inspired on Shapley values
-import plotly.graph_objs as go             # Plotly for interactive and pretty plots
-from model_interpreter.model_interpreter import ModelInterpreter # Class that enables the interpretation of models that handle variable sequence length input data
 
 import pixiedust                           # Debugging in Jupyter Notebook cells
 
 # Path to the parquet dataset files
-data_path = 'data/FCUL_ALS/cleaned/'
-# Path to the data + SHAP values dataframes
-data_n_shap_path = 'data/FCUL_ALS/interpreted/'
+data_path = 'Datasets/Thesis/FCUL_ALS/cleaned/'
 # Path to the code files
-project_path = 'code/FCUL_ALS_Disease_Progression/'
+project_path = 'GitHub/FCUL_ALS_Disease_Progression/'
 # Path to the models
 models_path = f'{project_path}models/'
-# Path to the model interpreters
-interpreters_path = f'{project_path}interpreters/'
+# Path to the metrics
+metrics_path = f'{project_path}metrics/'
 
 # Change to the scripts directory
 os.chdir("../scripts/")
@@ -79,28 +67,13 @@ categ_feat_ohe
 
 list(categ_feat_ohe.keys())
 
-# Normalization stats (allow us to get back the original values, to display in the interpretability plots):
-
-stream_norm_stats = open(f'{data_path}norm_stats.yml', 'r')
-
-norm_stats = yaml.load(stream_norm_stats, Loader=yaml.FullLoader)
-norm_stats
-
-list(norm_stats.keys())
-
-means = dict([(feat, norm_stats[feat]['mean']) for feat in norm_stats])
-means
-
-stds = dict([(feat, norm_stats[feat]['std']) for feat in norm_stats])
-stds
-
 # Dataloaders parameters:
 
 test_train_ratio = 0.25                    # Percentage of the data which will be used as a test set
 validation_ratio = 0.1                     # Percentage of the data from the training set which is used for validation purposes
 batch_size = 32                            # Number of unit stays in a mini batch
 
-# Model to interpret:
+# Model to test:
 
 model_filename = None                      # Name of the file containing the model that will be loaded
 model_class = None                         # Python class name that corresponds to the chosen model's type
@@ -115,6 +88,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer',
                                  'Bidirectional RNN with embedding layer and delta_ts',
                                  'Bidirectional LSTM with delta_ts',
                                  'Regular LSTM',
+                                 'Bidirectional LSTM with embedding layer and delta_ts',
                                  'MF1-LSTM',
                                  'XGBoost',
                                  'Logistic regression']):
@@ -155,6 +129,17 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer',
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
         # Set it as a custom model
         is_custom = True
+    elif model_name == 'Bidirectional LSTM with embedding layer and delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = 'lstm_bidir_pre_embedded_delta_ts_90dayswindow_0.3481valloss_06_07_2020_04_15.pth'
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
     elif model_name == 'MF1-LSTM':
         # Set the model file and class names, then load the model
         model_filename = 'mf1lstm_one_hot_encoded_90dayswindow_0.6009valloss_07_07_2020_03_46.pth'
@@ -183,12 +168,6 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer',
 
 
 # ## Loading the data
-
-# Original data:
-
-orig_ALS_df = pd.read_csv(f'{data_path}FCUL_ALS_cleaned_denorm.csv')
-orig_ALS_df.drop(columns=['Unnamed: 0'], inplace=True)
-orig_ALS_df.head()
 
 # Preprocessed data:
 
@@ -230,17 +209,10 @@ if use_delta_ts is not False:
     # Fill all the delta_ts missing values (the first value in a time series) with zeros
     ALS_df['delta_ts'] = ALS_df['delta_ts'].fillna(0)
 if use_delta_ts == 'normalized':
-    # Add delta_ts' normalization stats to the dictionaries
-    means['delta_ts'] = ALS_df['delta_ts'].mean()
-    stds['delta_ts'] = ALS_df['delta_ts'].std()
     # Normalize the time variation data
     # NOTE: When using the MF2-LSTM model, since it assumes that the time
     # variation is in days, we shouldn't normalize `delta_ts` with this model.
-    ALS_df['delta_ts'] = (ALS_df['delta_ts'] - means['delta_ts']) / stds['delta_ts']
-else:
-    # Ignore delta_ts' normalization stats to the dictionaries
-    means['delta_ts'] = 0
-    stds['delta_ts'] = 1
+    ALS_df['delta_ts'] = (ALS_df['delta_ts'] - ALS_df['delta_ts'].mean()) / ALS_df['delta_ts'].std()
 if use_delta_ts is not False:
     ALS_df.head()
 
@@ -356,138 +328,51 @@ train_features
 
 train_features.shape
 
-# Get the original, denormalized test data:
+# ## Testing the model
 
-if use_delta_ts is False:
-    # Prevent the identifier columns from being denormalized
-    columns_to_remove = [id_column, ts_column, 'delta_ts']
-else:
-    # Also prevent the time variation column from being denormalized
-    columns_to_remove = [id_column, ts_column]
+# ### Training set
 
-if ml_core == 'deep learning':
-    denorm_data = du.data_processing.denormalize_data(ALS_df, data=all_features, 
-                                                      id_columns=[id_column, ts_column],
-                                                      feature_columns=feature_columns,
-                                                      means=means, stds=stds,
-                                                      see_progress=False)
-else:
-    denorm_data = du.data_processing.denormalize_data(ALS_df, data=all_features[:, 2:], 
-                                                      id_columns=None,
-                                                      feature_columns=feature_columns,
-                                                      means=means, stds=stds,
-                                                      see_progress=False)
-
-# Testing the denormalization (getting the original values back):
-
-if ml_core == 'deep learning':
-    print(denorm_data[0, 0])
-else:
-    print(denorm_data[0])
-
-if ml_core == 'deep learning':
-    orig_ALS_df[(orig_ALS_df.subject_id == int(all_features[0, 0, 0])) & (orig_ALS_df.ts == int(all_features[0, 0, 1]))]
-else:
-    orig_ALS_df[(orig_ALS_df.subject_id == 2) & (orig_ALS_df.ts == 27)]
-
-if ml_core == 'deep learning':
-    print(orig_ALS_df[
-            (orig_ALS_df.subject_id == int(all_features[0, 0, 0])) 
-            & (orig_ALS_df.ts == int(all_features[0, 0, 1]))
-        ].drop(columns=['niv', 'niv_label']).values == denorm_data[0, 0].numpy())
-else:
-    print(orig_ALS_df[
-            (orig_ALS_df.subject_id == 2) 
-            & (orig_ALS_df.ts == 27)
-        ].drop(columns=['subject_id', 'ts', 'niv', 'niv_label']).values == denorm_data[0])
-
-# ## Interpreting the model
-
-all_features.shape
-
-# Define the interpreter:
-
-if ml_core == 'deep learning':
-    # Calculating the number of times to re-evaluate the model when explaining each prediction,
-    # based on SHAP's formula of nsamples = 2 * n_features + 2048
-    SHAP_bkgnd_samples = 2 * all_features.shape[-1] + 2048
-#     SHAP_bkgnd_samples = 2 * test_features.shape[-1]
-#     SHAP_bkgnd_samples = 200
-    print(SHAP_bkgnd_samples)
-
-if ml_core == 'deep learning':
-    interpreter = ModelInterpreter(model, ALS_df, model_type='multivariate_rnn', id_column=0, 
-                                   inst_column=1, fast_calc=True, SHAP_bkgnd_samples=SHAP_bkgnd_samples,
-                                   random_seed=du.random_seed, padding_value=padding_value,
-                                   is_custom=is_custom, total_length=total_length)
-elif model_class == 'XGBoost':
-    interpreter = shap.TreeExplainer(model)
-interpreter
-# else:
+_, train_metrics = du.deep_learning.model_inference(model, data=(train_features, train_labels), 
+                                                    metrics=['loss', 'accuracy', 'precision',
+                                                             'recall', 'F1', 'AUC'], 
+                                                    model_type='multivariate_rnn', is_custom=is_custom, 
+                                                    padding_value=padding_value)
+train_metrics
 
 
-# Calculate the feature importance scores (through SHAP values):
+# ### Validation set
 
-if ml_core == 'deep learning':
-    feat_scores = interpreter.interpret_model(test_data=all_features,
-                                              test_labels=all_labels,
-                                              instance_importance=False, 
-                                              feature_importance='shap')
-elif model_class == 'XGBoost':
-    feat_scores = interpreter.shap_values(all_features)
-# else:
+_, val_metrics = du.deep_learning.model_inference(model, data=(val_features, val_labels), 
+                                                  metrics=['loss', 'accuracy', 'precision',
+                                                           'recall', 'F1', 'AUC'], 
+                                                  model_type='multivariate_rnn', is_custom=is_custom, 
+                                                  padding_value=padding_value)
+val_metrics
 
+# ### Testing set
 
-# Get the expected value:
+_, test_metrics = du.deep_learning.model_inference(model, data=(test_features, test_labels), 
+                                                   metrics=['loss', 'accuracy', 'precision',
+                                                            'recall', 'F1', 'AUC'], 
+                                                   model_type='multivariate_rnn', is_custom=is_custom, 
+                                                   padding_value=padding_value)
+test_metrics
 
-if ml_core == 'deep learning':
-    expected_value = interpreter.explainer.expected_value[0]
-else:
-    expected_value = interpreter.expected_value
-print(f'Expected value: {expected_value}')
+# ## Saving a dictionary with all the metrics
 
-# ## Saving a dataframe with the resulting SHAP values
+# Join all the sets' metrics:
 
-feat_scores.shape
+metrics = dict()
+metrics['train'] = train_metrics
+metrics['val'] = val_metrics
+metrics['test'] = test_metrics
+metrics
 
-if ml_core == 'deep learning':
-    feature_columns.remove('subject_id')
-    feature_columns.remove('ts')
+# Save in a YAML file:
 
-du.visualization.shap_summary_plot(feat_scores, feature_columns, max_display=15)
+model_file_name_no_ext = model_filename.split('.pth')[0]
 
-if ml_core == 'deep learning':
-    du.visualization.shap_waterfall_plot(expected_value, feat_scores[0, 2, :], 
-                                         all_features[0, 2, 2:], feature_columns)
-else:
-    du.visualization.shap_waterfall_plot(expected_value, feat_scores[2, :], 
-                                         all_features[2, :], feature_columns)
-
-if ml_core == 'deep learning':
-    du.visualization.shap_waterfall_plot(expected_value, feat_scores[0, 2, :], 
-                                         denorm_data[0, 2, 2:], feature_columns)
-else:
-    du.visualization.shap_waterfall_plot(expected_value, feat_scores[2, :], 
-                                         denorm_data[2, :], feature_columns)
-
-if ml_core == 'deep learning':
-    data_n_shap_df = interpreter.shap_values_df()
-else:
-    # Join the original data and the features' SHAP values
-    data_n_shap = np.concatenate([all_features, all_labels.reshape(-1, 1), feat_scores], axis=1)
-    # Reshape into a 2D format
-    data_n_shap = data_n_shap.reshape(-1, data_n_shap.shape[-1])
-    # Remove padding samples
-    data_n_shap = data_n_shap[[padding_value not in row for row in data_n_shap]]
-    # Define the column names list
-    shap_column_names = [f'{feature}_shap' for feature in feature_columns]
-    column_names = ([id_column] + [ts_column] + feature_columns
-                    + [label_column] + shap_column_names)
-    # Create the dataframe
-    data_n_shap_df = pd.DataFrame(data=data_n_shap, columns=column_names)
-data_n_shap_df.head()
-
-
-data_n_shap_df.to_csv(f'{data_n_shap_path}fcul_als_with_shap_for_{model_filename}.csv')
+metrics_stream = open(f'{metrics_path}{model_file_name_no_ext}.yml', 'w')
+yaml.dump(metrics, metrics_stream, default_flow_style=False)
 
 

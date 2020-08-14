@@ -68,6 +68,10 @@ ALS_df.head()
 ALS_df.rename(columns={'REF': 'subject_id'}, inplace=True)
 ALS_df.head()
 
+# Number of patients:
+
+ALS_df.subject_id.nunique()
+
 # ## Creating a timestamp column
 #
 # Using `medianDate`, we can define a column that serves as the timestamp, which indicates how many days have gone by since the patient's first data sample.
@@ -102,9 +106,9 @@ ALS_df.ts.describe()
 ALS_df.columns
 
 ALS_df.drop(columns=['NIV_DATE', 'firstDate', 'lastDate', 'SNIP',
-                          'CervicalFlex', 'CervicalExt', 'ALS-FRS',
-                          'ALS-FRS-R', 'ALS-FRSb', 'ALS-FRSsUL',
-                          'ALS-FRSsLL', 'ALS-FRSr'], inplace=True)
+                     'CervicalFlex', 'CervicalExt', 'ALS-FRS',
+                     'ALS-FRS-R', 'ALS-FRSb', 'ALS-FRSsUL',
+                     'ALS-FRSsLL', 'ALS-FRSr'], inplace=True)
 ALS_df.head()
 
 # ## Removing patients without enough samples to predict one time window
@@ -152,16 +156,16 @@ du.search_explore.dataframe_missing_values(ALS_df)
 
 # + {"pixiedust": {"displayParams": {}}}
 ALS_df, new_columns = du.data_processing.one_hot_encoding_dataframe(ALS_df,
-                                                                         columns=['el_escorial_reviewed_criteria',
-                                                                                  'onset_form',
-                                                                                  'umn_vs_lmn',
-                                                                                  'c9orf72'],
-                                                                         join_rows=True,
-                                                                         join_by=['subject_id', 'ts'],
-                                                                         lower_case=True,
-                                                                         has_nan=True,
-                                                                         get_new_column_names=True,
-                                                                         inplace=True)
+                                                                    columns=['el_escorial_reviewed_criteria',
+                                                                             'onset_form',
+                                                                             'umn_vs_lmn',
+                                                                             'c9orf72'],
+                                                                    join_rows=True,
+                                                                    join_by=['subject_id', 'ts'],
+                                                                    lower_case=True,
+                                                                    has_nan=True,
+                                                                    get_new_column_names=True,
+                                                                    inplace=True)
 ALS_df.head()
 # -
 
@@ -175,10 +179,10 @@ categ_feat_ohe
 stream = open(f'{data_path}/cleaned/categ_feat_ohe.yml', 'w')
 yaml.dump(categ_feat_ohe, stream, default_flow_style=False)
 
-# Reduxing the UMN vs LMN columns into just 2 clear columns:
+# Reducing the UMN vs LMN columns into just 2 clear columns:
 
 ALS_df.rename(columns={'umn_vs_lmn_lmn': 'lmn',
-                            'umn_vs_lmn_umn': 'umn'}, inplace=True)
+                       'umn_vs_lmn_umn': 'umn'}, inplace=True)
 ALS_df.head()
 
 # Activate both UMN and LMN features if the "both" value is 1
@@ -206,7 +210,7 @@ ALS_df.head()
 
 # ## NIV label
 #
-# In order to predict the use of NIV in the next 3 months, we need to create a shifted version of the "niv" column.
+# Defining the label for the use of NIV over the next 90 days (~3 months).
 
 ALS_df[['subject_id', 'ts', 'niv']].head(20)
 
