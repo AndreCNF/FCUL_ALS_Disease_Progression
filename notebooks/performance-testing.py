@@ -73,44 +73,77 @@ test_train_ratio = 0.25                    # Percentage of the data which will b
 validation_ratio = 0.1                     # Percentage of the data from the training set which is used for validation purposes
 batch_size = 32                            # Number of unit stays in a mini batch
 
+# Decide if we are just going to test the best model or do a comparison with all similar trained models:
+
+test_mode = None                           # Sets if testing an individual model or multiple, similar ones
+@interact
+def set_test_mode(test=['one', 'aggregate']):
+    global test_mode
+    test_mode = test
+
+
 # Model to test:
 
 model_filename = None                      # Name of the file containing the model that will be loaded
 model_class = None                         # Python class name that corresponds to the chosen model's type
 model = None                               # Machine learning model object
+model2 = None                              # Other machine learning model object
+model3 = None                              # Other machine learning model object
 dataset_mode = 'one hot encoded'           # The mode in which we'll use the data, either one hot encoded or pre-embedded
 ml_core = 'deep learning'                  # The core machine learning type we'll use; either traditional ML or DL
 use_delta_ts = False                       # Indicates if we'll use time variation info
 time_window_days = 90                      # Number of days on which we want to predict NIV
 is_custom = False                          # Indicates if the model being used is a custom built one
 @interact
-def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer',
-                                 'Bidirectional RNN with embedding layer and delta_ts',
+def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and delta_ts',
+                                 'Bidirectional LSTM with embedding layer',
                                  'Bidirectional LSTM with delta_ts',
-                                 'Regular LSTM',
-                                 'Bidirectional LSTM with embedding layer and delta_ts',
-                                 'MF1-LSTM',
+                                 'Bidirectional LSTM',
+                                 'LSTM with embedding layer and delta_ts',
+                                 'LSTM with embedding layer',
+                                 'LSTM with delta_ts',
+                                 'LSTM',
+                                 'Bidirectional RNN with embedding layer and delta_ts',
+                                 'Bidirectional RNN with embedding layer',
+                                 'Bidirectional RNN with delta_ts',
+                                 'Bidirectional RNN',
+                                 'RNN with embedding layer and delta_ts',
+                                 'RNN with embedding layer',
+                                 'RNN with delta_ts',
+                                 'RNN',
+                                 'TLSTM',
                                  'XGBoost',
                                  'Logistic regression']):
-    global model_filename, model_class, model, dataset_mode, ml_core, use_delta_ts, time_window_days, is_custom
-    if model_name == 'Bidirectional LSTM with embedding layer':
+    global model_filename, model_class, model, model2, model3, dataset_mode, ml_core, use_delta_ts 
+    global time_window_days, is_custom, test_mode
+    if model_name == 'Bidirectional LSTM with embedding layer and delta_ts':
         # Set the model file and class names, then load the model
-        model_filename = 'lstm_bidir_pre_embedded_90dayswindow_0.2490valloss_06_07_2020_03_47.pth'
+        model_filename = 'lstm_bidir_pre_embedded_delta_ts_90dayswindow_0.3705valloss_08_07_2020_04_04.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
-        # Set the use of an embedding layer
-        dataset_mode = 'pre-embedded'
-        # Set it as a custom model
-        is_custom = True
-    elif model_name == 'Bidirectional RNN with embedding layer and delta_ts':
-        # Set the model file and class names, then load the model
-        model_filename = 'rnn_bidir_pre_embedded_delta_ts_90dayswindow_0.3059valloss_06_07_2020_03_10.pth'
-        model_class = 'VanillaRNN'
-        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = 'lstm_bidir_pre_embedded_delta_ts_90dayswindow_0.3674valloss_08_07_2020_03_59.pth'
+            model_filename3 = 'lstm_bidir_pre_embedded_delta_ts_90dayswindow_0.3481valloss_06_07_2020_04_15.pth'
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'Bidirectional LSTM with embedding layer':
+        # Set the model file and class names, then load the model
+        model_filename = 'lstm_bidir_pre_embedded_90dayswindow_0.2490valloss_06_07_2020_03_47.pth'
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
         # Set it as a custom model
         is_custom = True
     elif model_name == 'Bidirectional LSTM with delta_ts':
@@ -118,6 +151,67 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer',
         model_filename = 'lstm_bidir_one_hot_encoded_delta_ts_90dayswindow_0.3809valloss_06_07_2020_04_08.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'Bidirectional LSTM':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'LSTM with embedding layer and delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'LSTM with embedding layer':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'LSTM with delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
         # Set it as a custom model
@@ -127,17 +221,123 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer',
         model_filename = 'lstm_one_hot_encoded_90dayswindow_0.4363valloss_06_07_2020_03_28.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
         # Set it as a custom model
         is_custom = True
-    elif model_name == 'Bidirectional LSTM with embedding layer and delta_ts':
+    elif model_name == 'Bidirectional RNN with embedding layer and delta_ts':
         # Set the model file and class names, then load the model
-        model_filename = 'lstm_bidir_pre_embedded_delta_ts_90dayswindow_0.3481valloss_06_07_2020_04_15.pth'
-        model_class = 'VanillaLSTM'
+        model_filename = 'rnn_bidir_pre_embedded_delta_ts_90dayswindow_0.3059valloss_06_07_2020_03_10.pth'
+        model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'Bidirectional RNN with embedding layer':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'VanillaRNN'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'Bidirectional RNN with delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'VanillaRNN'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'Bidirectional RNN':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'VanillaRNN'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'RNN with embedding layer and delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'VanillaRNN'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'RNN with embedding layer':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'VanillaRNN'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'RNN with delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'VanillaRNN'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'Regular RNN':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'VanillaRNN'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
         # Set it as a custom model
         is_custom = True
     elif model_name == 'MF1-LSTM':
@@ -145,6 +345,39 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer',
         model_filename = 'mf1lstm_one_hot_encoded_90dayswindow_0.6009valloss_07_07_2020_03_46.pth'
         model_class = 'MF1LSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'MF2-LSTM':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'MF2LSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
+        # Set the use of delta_ts
+        use_delta_ts = 'raw'
+        # Set it as a custom model
+        is_custom = True
+    elif model_name == 'TLSTM':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'TLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        if test_mode == 'aggregate':
+            model_filename2 = ''
+            model_filename3 = ''
+            model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
+            model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
         # Set it as a custom model
@@ -340,6 +573,34 @@ _, train_metrics = du.deep_learning.model_inference(model, data=(train_features,
 train_metrics
 
 
+# If doing an aggregate test, do inference on the other similar models and combine the metrics in mean and standard deviation:
+
+if test_mode == 'aggregate':
+    _, train_metrics2 = du.deep_learning.model_inference(model2, data=(train_features, train_labels), 
+                                                         metrics=['loss', 'accuracy', 'precision',
+                                                                  'recall', 'F1', 'AUC'], 
+                                                         model_type='multivariate_rnn', is_custom=is_custom, 
+                                                         padding_value=padding_value)
+    _, train_metrics3 = du.deep_learning.model_inference(model3, data=(train_features, train_labels), 
+                                                         metrics=['loss', 'accuracy', 'precision',
+                                                                  'recall', 'F1', 'AUC'], 
+                                                         model_type='multivariate_rnn', is_custom=is_custom, 
+                                                         padding_value=padding_value)
+    train_metrics2
+    train_metrics3
+
+
+if test_mode == 'aggregate':
+    train_metrics_agg = dict()
+    for key in train_metrics.keys():
+        # Create the current key
+        train_metrics_agg[key] = dict()
+        # Add the mean
+        train_metrics_agg[key]['mean'] = np.mean([train_metrics[key], train_metrics2[key], train_metrics3[key]]).item()
+        # Add the standard deviation
+        train_metrics_agg[key]['std'] = np.std([train_metrics[key], train_metrics2[key], train_metrics3[key]]).item()
+    train_metrics_agg
+
 # ### Validation set
 
 _, val_metrics = du.deep_learning.model_inference(model, data=(val_features, val_labels), 
@@ -348,6 +609,34 @@ _, val_metrics = du.deep_learning.model_inference(model, data=(val_features, val
                                                   model_type='multivariate_rnn', is_custom=is_custom, 
                                                   padding_value=padding_value)
 val_metrics
+
+# If doing an aggregate test, do inference on the other similar models and combine the metrics in mean and standard deviation:
+
+if test_mode == 'aggregate':
+    _, val_metrics2 = du.deep_learning.model_inference(model2, data=(val_features, val_labels), 
+                                                       metrics=['loss', 'accuracy', 'precision',
+                                                                'recall', 'F1', 'AUC'], 
+                                                       model_type='multivariate_rnn', is_custom=is_custom, 
+                                                       padding_value=padding_value)
+    _, val_metrics3 = du.deep_learning.model_inference(model3, data=(val_features, val_labels), 
+                                                       metrics=['loss', 'accuracy', 'precision',
+                                                                'recall', 'F1', 'AUC'], 
+                                                       model_type='multivariate_rnn', is_custom=is_custom, 
+                                                       padding_value=padding_value)
+    val_metrics2
+    val_metrics3
+
+
+if test_mode == 'aggregate':
+    val_metrics_agg = dict()
+    for key in val_metrics.keys():
+        # Create the current key
+        val_metrics_agg[key] = dict()
+        # Add the mean
+        val_metrics_agg[key]['mean'] = np.mean([val_metrics[key], val_metrics2[key], val_metrics3[key]]).item()
+        # Add the standard deviation
+        val_metrics_agg[key]['std'] = np.std([val_metrics[key], val_metrics2[key], val_metrics3[key]]).item()
+    val_metrics_agg
 
 # ### Testing set
 
@@ -358,21 +647,61 @@ _, test_metrics = du.deep_learning.model_inference(model, data=(test_features, t
                                                    padding_value=padding_value)
 test_metrics
 
+# If doing an aggregate test, do inference on the other similar models and combine the metrics in mean and standard deviation:
+
+if test_mode == 'aggregate':
+    _, test_metrics2 = du.deep_learning.model_inference(model2, data=(test_features, test_labels), 
+                                                         metrics=['loss', 'accuracy', 'precision',
+                                                                  'recall', 'F1', 'AUC'], 
+                                                         model_type='multivariate_rnn', is_custom=is_custom, 
+                                                         padding_value=padding_value)
+    _, test_metrics3 = du.deep_learning.model_inference(model3, data=(test_features, test_labels), 
+                                                         metrics=['loss', 'accuracy', 'precision',
+                                                                  'recall', 'F1', 'AUC'], 
+                                                         model_type='multivariate_rnn', is_custom=is_custom, 
+                                                         padding_value=padding_value)
+    test_metrics2
+    test_metrics3
+
+
+if test_mode == 'aggregate':
+    test_metrics_agg = dict()
+    for key in test_metrics.keys():
+        # Create the current key
+        test_metrics_agg[key] = dict()
+        # Add the mean
+        test_metrics_agg[key]['mean'] = np.mean([test_metrics[key], test_metrics2[key], test_metrics3[key]]).item()
+        # Add the standard deviation
+        test_metrics_agg[key]['std'] = np.std([test_metrics[key], test_metrics2[key], test_metrics3[key]]).item()
+    test_metrics_agg
+
 # ## Saving a dictionary with all the metrics
 
 # Join all the sets' metrics:
 
 metrics = dict()
-metrics['train'] = train_metrics
-metrics['val'] = val_metrics
-metrics['test'] = test_metrics
+if test_mode == 'aggregate':
+    metrics['train'] = train_metrics_agg
+    metrics['val'] = val_metrics_agg
+    metrics['test'] = test_metrics_agg
+else:
+    metrics['train'] = train_metrics
+    metrics['val'] = val_metrics
+    metrics['test'] = test_metrics
 metrics
 
 # Save in a YAML file:
 
 model_file_name_no_ext = model_filename.split('.pth')[0]
 
-metrics_stream = open(f'{metrics_path}{model_file_name_no_ext}.yml', 'w')
+if test_mode == 'aggregate':
+    file_path = f'{metrics_path}aggregate/'
+    model_file_name_yml = model_file_name_no_ext.split('.')[0][:-2]
+else:
+    file_path = f'{metrics_path}individual_models/'
+    model_file_name_yml = model_file_name_no_ext
+
+metrics_stream = open(f'{file_path}{model_file_name_yml}.yml', 'w')
 yaml.dump(metrics, metrics_stream, default_flow_style=False)
 
 
