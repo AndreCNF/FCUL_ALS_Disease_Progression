@@ -26,11 +26,11 @@ from model_interpreter.model_interpreter import ModelInterpreter # Class that en
 import pixiedust                           # Debugging in Jupyter Notebook cells
 
 # Path to the parquet dataset files
-data_path = 'data/FCUL_ALS/cleaned/'
+data_path = 'Datasets/Thesis/FCUL_ALS/cleaned/'
 # Path to the data + SHAP values dataframes
-data_n_shap_path = 'data/FCUL_ALS/interpreted/'
+data_n_shap_path = 'Datasets/Thesis/FCUL_ALS/interpreted/'
 # Path to the code files
-project_path = 'code/FCUL_ALS_Disease_Progression/'
+project_path = 'GitHub/FCUL_ALS_Disease_Progression/'
 # Path to the models
 models_path = f'{project_path}models/'
 # Path to the model interpreters
@@ -105,29 +105,141 @@ batch_size = 32                            # Number of unit stays in a mini batc
 model_filename = None                      # Name of the file containing the model that will be loaded
 model_class = None                         # Python class name that corresponds to the chosen model's type
 model = None                               # Machine learning model object
+model2 = None                              # Other machine learning model object
+model3 = None                              # Other machine learning model object
 dataset_mode = 'one hot encoded'           # The mode in which we'll use the data, either one hot encoded or pre-embedded
 ml_core = 'deep learning'                  # The core machine learning type we'll use; either traditional ML or DL
 use_delta_ts = False                       # Indicates if we'll use time variation info
 time_window_days = 90                      # Number of days on which we want to predict NIV
 is_custom = False                          # Indicates if the model being used is a custom built one
 @interact
-def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer',
-                                 'Bidirectional RNN with embedding layer and delta_ts',
+def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and delta_ts',
+                                 'Bidirectional LSTM with embedding layer',
                                  'Bidirectional LSTM with delta_ts',
-                                 'Regular LSTM',
+                                 'Bidirectional LSTM',
+                                 'LSTM with embedding layer and delta_ts',
+                                 'LSTM with embedding layer',
+                                 'LSTM with delta_ts',
+                                 'LSTM',
+                                 'Bidirectional RNN with embedding layer and delta_ts',
+                                 'Bidirectional RNN with embedding layer',
+                                 'Bidirectional RNN with delta_ts',
+                                 'Bidirectional RNN',
+                                 'RNN with embedding layer and delta_ts',
+                                 'RNN with embedding layer',
+                                 'RNN with delta_ts',
+                                 'RNN',
                                  'MF1-LSTM',
+                                 'MF2-LSTM',
+                                 'TLSTM',
                                  'XGBoost',
                                  'Logistic regression']):
-    global model_filename, model_class, model, dataset_mode, ml_core, use_delta_ts, time_window_days, is_custom
-    if model_name == 'Bidirectional LSTM with embedding layer':
+    global model_filename, model_class, model, model2, model3, dataset_mode, ml_core, use_delta_ts 
+    global time_window_days, is_custom
+    if model_name == 'Bidirectional LSTM with embedding layer and delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = 'lstm_bidir_pre_embedded_delta_ts_90dayswindow_0.3705valloss_08_07_2020_04_04.pth'
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'Bidirectional LSTM with embedding layer':
         # Set the model file and class names, then load the model
         model_filename = 'lstm_bidir_pre_embedded_90dayswindow_0.2490valloss_06_07_2020_03_47.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = False
         # Set it as a custom model
         is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'Bidirectional LSTM with delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = 'lstm_bidir_one_hot_encoded_delta_ts_90dayswindow_0.3809valloss_06_07_2020_04_08.pth'
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'Bidirectional LSTM':
+        # Set the model file and class names, then load the model
+        model_filename = 'lstm_bidir_one_hot_encoded_90dayswindow_0.4497valloss_08_07_2020_04_31.pth'
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
+        # Set the use of delta_ts
+        use_delta_ts = False
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'LSTM with embedding layer and delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = 'lstm_pre_embedded_delta_ts_90dayswindow_0.4771valloss_06_07_2020_03_55.pth'
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'LSTM with embedding layer':
+        # Set the model file and class names, then load the model
+        model_filename = 'lstm_pre_embedded_90dayswindow_0.5898valloss_06_07_2020_03_21.pth'
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = False
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'LSTM with delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = 'lstm_one_hot_encoded_delta_ts_90dayswindow_0.5178valloss_06_07_2020_04_02.pth'
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'LSTM':
+        # Set the model file and class names, then load the model
+        model_filename = 'lstm_one_hot_encoded_90dayswindow_0.4363valloss_06_07_2020_03_28.pth'
+        model_class = 'VanillaLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
+        # Set the use of delta_ts
+        use_delta_ts = False
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
     elif model_name == 'Bidirectional RNN with embedding layer and delta_ts':
         # Set the model file and class names, then load the model
         model_filename = 'rnn_bidir_pre_embedded_delta_ts_90dayswindow_0.3059valloss_06_07_2020_03_10.pth'
@@ -139,22 +251,99 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer',
         use_delta_ts = 'normalized'
         # Set it as a custom model
         is_custom = True
-    elif model_name == 'Bidirectional LSTM with delta_ts':
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'Bidirectional RNN with embedding layer':
         # Set the model file and class names, then load the model
-        model_filename = 'lstm_bidir_one_hot_encoded_delta_ts_90dayswindow_0.3809valloss_06_07_2020_04_08.pth'
-        model_class = 'VanillaLSTM'
+        model_filename = 'rnn_bidir_pre_embedded_90dayswindow_0.4005valloss_08_07_2020_03_43.pth'
+        model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = False
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'Bidirectional RNN with delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = 'rnn_bidir_one_hot_encoded_delta_ts_90dayswindow_0.3631valloss_08_07_2020_04_21.pth'
+        model_class = 'VanillaRNN'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
         # Set it as a custom model
         is_custom = True
-    elif model_name == 'Regular LSTM':
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'Bidirectional RNN':
         # Set the model file and class names, then load the model
-        model_filename = 'lstm_one_hot_encoded_90dayswindow_0.4363valloss_06_07_2020_03_28.pth'
-        model_class = 'VanillaLSTM'
+        model_filename = 'rnn_bidir_one_hot_encoded_90dayswindow_0.3713valloss_08_07_2020_04_49.pth'
+        model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
+        # Set the use of delta_ts
+        use_delta_ts = False
         # Set it as a custom model
         is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'RNN with embedding layer and delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = 'rnn_pre_embedded_delta_ts_30dayswindow_0.4746valloss_29_06_2020_17_30.pth'
+        model_class = 'VanillaRNN'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'RNN with embedding layer':
+        # Set the model file and class names, then load the model
+        model_filename = 'rnn_with_embedding_90dayswindow_0.5569valloss_30_06_2020_17_04.pth'
+        model_class = 'VanillaRNN'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = False
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'RNN with delta_ts':
+        # Set the model file and class names, then load the model
+        model_filename = 'rnn_one_hot_encoded_delta_ts_90dayswindow_0.4275valloss_06_07_2020_02_55.pth'
+        model_class = 'VanillaRNN'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'RNN':
+        # Set the model file and class names, then load the model
+        model_filename = 'rnn_one_hot_encoded_90dayswindow_0.5497valloss_30_06_2020_18_25.pth'
+        model_class = 'VanillaRNN'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
+        # Set the use of delta_ts
+        use_delta_ts = False
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
     elif model_name == 'MF1-LSTM':
         # Set the model file and class names, then load the model
         model_filename = 'mf1lstm_one_hot_encoded_90dayswindow_0.6009valloss_07_07_2020_03_46.pth'
@@ -164,6 +353,30 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer',
         use_delta_ts = 'normalized'
         # Set it as a custom model
         is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'MF2-LSTM':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'MF2LSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of delta_ts
+        use_delta_ts = 'raw'
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'TLSTM':
+        # Set the model file and class names, then load the model
+        model_filename = ''
+        model_class = 'TLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the use of delta_ts
+        use_delta_ts = 'normalized'
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
     elif model_name == 'XGBoost':
         # Set the model file and class names, then load the model
         model_filename = 'xgb_0.5926valloss_09_07_2020_02_40.pth'
@@ -423,19 +636,17 @@ if ml_core == 'deep learning':
 elif model_class == 'XGBoost':
     interpreter = shap.TreeExplainer(model)
 interpreter
-# else:
 
 
 # Calculate the feature importance scores (through SHAP values):
 
 if ml_core == 'deep learning':
-    feat_scores = interpreter.interpret_model(test_data=all_features,
-                                              test_labels=all_labels,
+    feat_scores = interpreter.interpret_model(test_data=all_features[:2],
+                                              test_labels=all_labels[:2],
                                               instance_importance=False, 
                                               feature_importance='shap')
 elif model_class == 'XGBoost':
     feat_scores = interpreter.shap_values(all_features)
-# else:
 
 
 # Get the expected value:
@@ -448,11 +659,67 @@ print(f'Expected value: {expected_value}')
 
 # ## Saving a dataframe with the resulting SHAP values
 
+# Test if the SHAP values match the model output:
+
 feat_scores.shape
 
 if ml_core == 'deep learning':
     feature_columns.remove('subject_id')
     feature_columns.remove('ts')
+
+interpreter.test_data
+
+(all_features[:2] == interpreter.test_data).all()
+
+flat_labels = interpreter.test_labels.flatten()
+no_pad_mask = flat_labels != padding_value
+no_pad_mask
+
+output_0, hidden_state_0 = model(interpreter.test_data[0, 0, 2:].unsqueeze(0).unsqueeze(0), get_hidden_state=True)
+output_0
+hidden_state_0
+
+output_1, hidden_state_1 = model(interpreter.test_data[0, 1, 2:].unsqueeze(0).unsqueeze(0), get_hidden_state=True,
+                                 hidden_state=hidden_state_0)
+output_1
+hidden_state_1
+
+output_test, _ = model(interpreter.test_data[0, :6, 2:].unsqueeze(0), get_hidden_state=True)
+output_test
+
+seq_lengths = du.search_explore.find_seq_len(interpreter.test_labels, padding_value)
+seq_lengths
+
+ref_output = model(interpreter.test_data[:, :, 2:], seq_lengths=seq_lengths).squeeze().detach().numpy()
+ref_output = ref_output[no_pad_mask]
+ref_output
+
+shap_output = np.sum(feat_scores, axis=2) + expected_value
+shap_output = shap_output.flatten()
+shap_output = shap_output[no_pad_mask]
+shap_output
+
+ref_output.shape
+
+shap_output.shape
+
+all(shap_output == ref_output)
+
+ref_output_s = pd.Series(ref_output)
+
+shap_output_s = pd.Series(shap_output)
+
+subjects = list(interpreter.test_data[:, :, 0].unique().int().numpy())
+subjects.remove(padding_value)
+subjects
+
+# Get an overview of the important features and model output for the current patient
+ALS_df[ALS_df.subject_id.isin(subjects)].reset_index().drop(columns='index').assign(real_output=ref_output_s) \
+                                                                            .assign(shap_output=shap_output_s)
+
+ref_output_s == shap_output_s
+
+# Test some interpretation plots:
 
 du.visualization.shap_summary_plot(feat_scores, feature_columns, max_display=15)
 
@@ -487,6 +754,8 @@ else:
     data_n_shap_df = pd.DataFrame(data=data_n_shap, columns=column_names)
 data_n_shap_df.head()
 
+
+# Save the data:
 
 data_n_shap_df.to_csv(f'{data_n_shap_path}fcul_als_with_shap_for_{model_filename}.csv')
 

@@ -23,9 +23,9 @@ from ipywidgets import interact            # Display selectors and sliders
 import pixiedust                           # Debugging in Jupyter Notebook cells
 
 # Path to the parquet dataset files
-data_path = 'data/FCUL_ALS/cleaned/'
+data_path = 'Datasets/Thesis/FCUL_ALS/cleaned/'
 # Path to the code files
-project_path = 'code/FCUL_ALS_Disease_Progression/'
+project_path = 'GitHub/FCUL_ALS_Disease_Progression/'
 
 # Change to the scripts directory
 os.chdir("../scripts/")
@@ -225,6 +225,10 @@ else:
     embedding_dim = None
 print(f'Embedding features: {embed_features}')
 print(f'Number of embeddings: {n_embeddings}')
+
+ALS_df.columns
+
+ALS_df.columns[embed_features]
 
 # Apply the pre-trained embedding layer, if required:
 
