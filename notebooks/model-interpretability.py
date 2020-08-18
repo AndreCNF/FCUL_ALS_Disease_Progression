@@ -146,7 +146,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'Bidirectional LSTM with embedding layer':
@@ -159,7 +159,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = False
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'Bidirectional LSTM with delta_ts':
@@ -172,7 +172,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'Bidirectional LSTM':
@@ -185,7 +185,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = False
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'LSTM with embedding layer and delta_ts':
@@ -198,7 +198,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'LSTM with embedding layer':
@@ -211,7 +211,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = False
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'LSTM with delta_ts':
@@ -224,7 +224,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'LSTM':
@@ -237,7 +237,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = False
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'Bidirectional RNN with embedding layer and delta_ts':
@@ -250,7 +250,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'Bidirectional RNN with embedding layer':
@@ -263,7 +263,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = False
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'Bidirectional RNN with delta_ts':
@@ -276,7 +276,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'Bidirectional RNN':
@@ -289,7 +289,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = False
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'RNN with embedding layer and delta_ts':
@@ -302,7 +302,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'RNN with embedding layer':
@@ -315,7 +315,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = False
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'RNN with delta_ts':
@@ -328,7 +328,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'RNN':
@@ -341,7 +341,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         # Set the use of delta_ts
         use_delta_ts = False
         # Set it as a custom model
-        is_custom = True
+        is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'MF1-LSTM':
@@ -508,6 +508,11 @@ feature_columns.remove('niv_label')
 if ml_core == 'machine learning':
     feature_columns.remove('subject_id')
     feature_columns.remove('ts')
+    model_feature_columns = feature_columns
+else:
+    model_feature_columns = feature_columns.copy()
+    model_feature_columns.remove('subject_id')
+    model_feature_columns.remove('ts')
 
 # ## Defining the dataset object
 
@@ -616,8 +621,6 @@ else:
 
 # ## Interpreting the model
 
-all_features.shape
-
 # Define the interpreter:
 
 if ml_core == 'deep learning':
@@ -629,20 +632,70 @@ if ml_core == 'deep learning':
     print(SHAP_bkgnd_samples)
 
 if ml_core == 'deep learning':
-    interpreter = ModelInterpreter(model, ALS_df, model_type='multivariate_rnn', id_column=0, 
-                                   inst_column=1, fast_calc=True, SHAP_bkgnd_samples=SHAP_bkgnd_samples,
-                                   random_seed=du.random_seed, padding_value=padding_value,
-                                   is_custom=is_custom, total_length=total_length)
+    interpreter = ModelInterpreter(model, ALS_df, model_type='multivariate_rnn', id_column_name=id_column, 
+                                   inst_column_name=ts_column, label_column_name=label_column, 
+                                   fast_calc=True, SHAP_bkgnd_samples=SHAP_bkgnd_samples, 
+                                   random_seed=du.random_seed, padding_value=padding_value, 
+                                   is_custom=is_custom, total_length=total_length, occlusion_wgt=0.7)
 elif model_class == 'XGBoost':
     interpreter = shap.TreeExplainer(model)
 interpreter
 
 
+# ### Instance importance
+
+# Calculate instance importance scores:
+
+if ml_core == 'deep learning':
+    inst_scores = interpreter.interpret_model(test_data=all_features,
+                                              test_labels=all_labels,
+                                              instance_importance=True, 
+                                              feature_importance=False)
+
+
+inst_scores
+
+# Visualize the instance importance:
+
+interpreter.instance_importance_plot(orig_data=interpreter.test_data, inst_scores=inst_scores,
+                                     pred_prob=None, uniform_spacing=False,
+                                     show_pred_prob=False, show_title=True,
+                                     show_colorbar=True, click_mode='event+select',
+                                     labels=interpreter.test_labels, seq_len=None, threshold=0,
+                                     get_fig_obj=False, tensor_idx=True,
+                                     max_seq=10, background_color='black',
+                                     font_family='Roboto', font_size=14,
+                                     font_color='white')
+
+# Check a patient's outputs to see if the instance importance scores make sense:
+
+subjects = list(interpreter.test_data[:, :, 0].unique().int().numpy())
+subjects.remove(padding_value)
+
+
+@interact
+def get_outputs_of_patient(patient=subjects):
+    global interpreter, id_column_idx, ts_column_idx
+    # Find the sequence length of the current patient
+    seq_len = interpreter.seq_len_dict[patient]
+    # Get the data corresponding to the current patient
+    data = interpreter.test_data[interpreter.test_data[:, :, 0] == patient]
+    # Add a third dimension for the data to be readable by the model
+    data = data.unsqueeze(0)
+    # Remove identifier columns from the data
+    data = du.deep_learning.remove_tensor_column(data, [id_column_idx, ts_column_idx], inplace=True)
+    # Run the model on the patient's data
+    new_output = model(data[:, :seq_len, :])
+    return new_output
+
+
+# ### Feature importance
+
 # Calculate the feature importance scores (through SHAP values):
 
 if ml_core == 'deep learning':
-    feat_scores = interpreter.interpret_model(test_data=all_features[:2],
-                                              test_labels=all_labels[:2],
+    feat_scores = interpreter.interpret_model(test_data=all_features,
+                                              test_labels=all_labels,
                                               instance_importance=False, 
                                               feature_importance='shap')
 elif model_class == 'XGBoost':
@@ -656,8 +709,6 @@ if ml_core == 'deep learning':
 else:
     expected_value = interpreter.expected_value
 print(f'Expected value: {expected_value}')
-
-# ## Saving a dataframe with the resulting SHAP values
 
 # Test if the SHAP values match the model output:
 
@@ -713,7 +764,8 @@ subjects = list(interpreter.test_data[:, :, 0].unique().int().numpy())
 subjects.remove(padding_value)
 subjects
 
-# Get an overview of the important features and model output for the current patient
+# Get an overview of the important features and model output for the current patient:
+
 ALS_df[ALS_df.subject_id.isin(subjects)].reset_index().drop(columns='index').assign(real_output=ref_output_s) \
                                                                             .assign(shap_output=shap_output_s)
 
@@ -721,21 +773,23 @@ ref_output_s == shap_output_s
 
 # Test some interpretation plots:
 
-du.visualization.shap_summary_plot(feat_scores, feature_columns, max_display=15)
+du.visualization.shap_summary_plot(feat_scores, model_feature_columns, max_display=15)
 
 if ml_core == 'deep learning':
     du.visualization.shap_waterfall_plot(expected_value, feat_scores[0, 2, :], 
-                                         all_features[0, 2, 2:], feature_columns)
+                                         all_features[0, 2, 2:], model_feature_columns)
 else:
     du.visualization.shap_waterfall_plot(expected_value, feat_scores[2, :], 
-                                         all_features[2, :], feature_columns)
+                                         all_features[2, :], model_feature_columns)
 
 if ml_core == 'deep learning':
     du.visualization.shap_waterfall_plot(expected_value, feat_scores[0, 2, :], 
-                                         denorm_data[0, 2, 2:], feature_columns)
+                                         denorm_data[0, 2, 2:], model_feature_columns)
 else:
     du.visualization.shap_waterfall_plot(expected_value, feat_scores[2, :], 
-                                         denorm_data[2, :], feature_columns)
+                                         denorm_data[2, :], model_feature_columns)
+
+# ## Saving a dataframe with the resulting SHAP values
 
 if ml_core == 'deep learning':
     data_n_shap_df = interpreter.shap_values_df()
@@ -756,6 +810,9 @@ data_n_shap_df.head()
 
 
 # Save the data:
+
+data_n_shap_file_name = f'fcul_als_with_shap_for_{model_filename.split(".pth")[0]}'
+data_n_shap_file_name
 
 data_n_shap_df.to_csv(f'{data_n_shap_path}fcul_als_with_shap_for_{model_filename}.csv')
 
