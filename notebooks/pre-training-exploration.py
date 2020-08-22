@@ -173,9 +173,81 @@ x = 1
 
 # ### Plots
 
-ALS_proc_gender_count = ALS_proc_df.groupby('subject_id').first().gender.value_counts().to_frame()
-data = [go.Pie(labels=ALS_proc_gender_count.index, values=ALS_proc_gender_count.gender)]
-layout = go.Layout(title='Patients Gender Demographics')
+background_color = '#282828'
+font_family = 'Roboto'
+font_size = 14
+font_color = '#ADAFAE'
+
+data = [
+    go.Histogram(
+        x=seq_len, 
+        y=seq_len.index,
+        name='All'
+    )
+]
+layout = go.Layout(
+    title_text='Sequence length distribution',
+    xaxis_title_text='Sequence length',
+    yaxis_title_text='Count',
+    paper_bgcolor=background_color,
+    plot_bgcolor=background_color,
+#     margin=dict(l=0, r=0, t=0, b=0, pad=0),
+    font=dict(
+        family=font_family,
+        size=font_size,
+        color=font_color
+    )
+)
+fig = go.Figure(data, layout)
+fig.show()
+
+column = 'gender'
+# Find the unique values of a column
+unique_vals = ALS_proc_df[column].unique()
+# Create an histogram for each segment of data that matches each unique value
+data = list()
+for val in unique_vals:
+    # Get the data that has the current value
+    tmp_df = ALS_proc_df[ALS_proc_df[column] == val]
+    # Calculate the sequence lengths on this subset of data
+    tmp_seq_len = tmp_df.groupby('subject_id').ts.count()
+    # Add the histogram
+    data.append(
+        go.Histogram(
+            x=tmp_seq_len, 
+            y=tmp_seq_len.index,
+            histnorm='percent',
+            name=f'{column} = {val}'
+        )
+    )
+layout = go.Layout(
+    title_text='Sequence length distribution',
+    xaxis_title_text='Sequence length',
+    yaxis_title_text='Count',
+)
+fig = go.Figure(data, layout)
+fig.show()
+
+data = [
+    go.Histogram(
+        x=ALS_proc_df['delta_ts'], 
+        y=ALS_proc_df.index,
+        name='All'
+    )
+]
+layout = go.Layout(
+    title_text='Time variation distribution',
+    xaxis_title_text='Time difference between samples',
+    yaxis_title_text='Count',
+    paper_bgcolor=background_color,
+    plot_bgcolor=background_color,
+#     margin=dict(l=0, r=0, t=0, b=0, pad=0),
+    font=dict(
+        family=font_family,
+        size=font_size,
+        color=font_color
+    )
+)
 fig = go.Figure(data, layout)
 fig.show()
 
@@ -184,8 +256,26 @@ layout = go.Layout(title='Patient age distribution')
 fig = go.Figure(data, layout)
 fig.show()
 
+ALS_proc_gender_count = ALS_proc_df.groupby('subject_id').first().gender.value_counts().to_frame()
+data = [go.Pie(labels=ALS_proc_gender_count.index, values=ALS_proc_gender_count.gender)]
+layout = go.Layout(title='Patient gender demographics')
+fig = go.Figure(data, layout)
+fig.show()
+
+ALS_proc_gender_count = ALS_proc_df.groupby('subject_id').first().gender.value_counts().to_frame()
+data = [go.Bar(x=ALS_proc_gender_count.index, y=ALS_proc_gender_count.gender)]
+layout = go.Layout(title='Patients Gender Demographics')
+fig = go.Figure(data, layout)
+fig.show()
+
 ALS_proc_niv_count = ALS_proc_df.niv.value_counts().to_frame()
 data = [go.Pie(labels=ALS_proc_niv_count.index, values=ALS_proc_niv_count.niv)]
+layout = go.Layout(title='Visits where the patient is using NIV')
+fig = go.Figure(data, layout)
+fig.show()
+
+ALS_proc_niv_count = ALS_proc_df.niv_label.value_counts().to_frame()
+data = [go.Pie(labels=ALS_proc_niv_count.index, values=ALS_proc_niv_count.niv_label)]
 layout = go.Layout(title='Visits where the patient is using NIV')
 fig = go.Figure(data, layout)
 fig.show()
@@ -197,6 +287,12 @@ fig.show()
 
 ALS_proc_patient_niv_count = ALS_proc_df.groupby('subject_id').niv.max().value_counts().to_frame()
 data = [go.Pie(labels=ALS_proc_patient_niv_count.index, values=ALS_proc_patient_niv_count.niv)]
+layout = go.Layout(title='Patients which eventually use NIV')
+fig = go.Figure(data, layout)
+fig.show()
+
+ALS_proc_patient_niv_count = ALS_proc_df.groupby('subject_id').niv_label.max().value_counts().to_frame()
+data = [go.Pie(labels=ALS_proc_patient_niv_count.index, values=ALS_proc_patient_niv_count.niv_label)]
 layout = go.Layout(title='Patients which eventually use NIV')
 fig = go.Figure(data, layout)
 fig.show()

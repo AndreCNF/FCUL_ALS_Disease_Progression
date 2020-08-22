@@ -43,10 +43,6 @@ du.set_pandas_library(lib='pandas')
 pd.set_option('display.max_columns', 3000)
 pd.set_option('display.max_rows', 3000)
 
-# Set the random seed for reproducibility:
-
-du.set_random_seed(42)
-
 # ## Initializing variables
 
 # Comet ML settings:
@@ -265,6 +261,10 @@ dataset = du.datasets.Time_Series_Dataset(ALS_df, data, padding_value=padding_va
 dataset.__len__()
 
 # ## Separating into train and validation sets
+
+# Set the random seed for reproducibility:
+
+du.set_random_seed(42)
 
 (train_dataloader, val_dataloader, test_dataloader,
 train_indeces, val_indeces, test_indeces) = du.machine_learning.create_train_sets(dataset,
