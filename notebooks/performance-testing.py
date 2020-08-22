@@ -12,6 +12,7 @@ import torch                               # PyTorch to create and apply deep le
 import xgboost as xgb                      # Gradient boosting trees models
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
+import joblib                              # Save and load scikit-learn models in disk
 import pickle                              # Save python objects in files
 import yaml                                # Save and load YAML files
 from ipywidgets import interact            # Display selectors and sliders
@@ -177,19 +178,19 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         ml_core = 'deep learning'
     elif model_name == 'Bidirectional LSTM with delta_ts':
         # Set the model file and class names, then load the model
-        model_filename = 'lstm_bidir_one_hot_encoded_delta_ts_90dayswindow_0.3809valloss_06_07_2020_04_08.pth'
+        model_filename = 'lstm_bidir_one_hot_encoded_delta_ts_90dayswindow_0.3784valloss_08_07_2020_04_14.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
         if test_mode == 'aggregate':
-            model_filename2 = 'lstm_bidir_one_hot_encoded_delta_ts_90dayswindow_0.3784valloss_08_07_2020_04_14.pth'
+            model_filename2 = 'lstm_bidir_one_hot_encoded_delta_ts_90dayswindow_0.3809valloss_06_07_2020_04_08.pth'
             model_filename3 = 'lstm_bidir_one_hot_encoded_delta_ts_90dayswindow_0.3603valloss_08_07_2020_04_17.pth'
             model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
             model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
             # Set the secondary random seed
-            random_seed_2 = 0
+            random_seed_2 = 42
             random_seed_3 = 100
         # Set the main random seed
-        random_seed_1 = 42
+        random_seed_1 = 0
         # Set the use of an embedding layer
         dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
@@ -223,19 +224,19 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         ml_core = 'deep learning'
     elif model_name == 'LSTM with embedding layer and delta_ts':
         # Set the model file and class names, then load the model
-        model_filename = 'lstm_pre_embedded_delta_ts_90dayswindow_0.4771valloss_06_07_2020_03_55.pth'
+        model_filename = 'lstm_pre_embedded_delta_ts_90dayswindow_0.5071valloss_21_08_2020_05_03.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
         if test_mode == 'aggregate':
-            model_filename2 = 'lstm_pre_embedded_delta_ts_90dayswindow_0.5071valloss_21_08_2020_05_03.pth'
+            model_filename2 = 'lstm_pre_embedded_delta_ts_90dayswindow_0.4771valloss_06_07_2020_03_55.pth'
             model_filename3 = 'lstm_pre_embedded_delta_ts_90dayswindow_0.5712valloss_21_08_2020_05_00.pth'
             model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
             model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
             # Set the secondary random seed
             random_seed_2 = 0
-            random_seed_3 = 100
+            random_seed_3 = 42
         # Set the main random seed
-        random_seed_1 = 42
+        random_seed_1 = 100
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
@@ -292,19 +293,19 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         ml_core = 'deep learning'
     elif model_name == 'LSTM':
         # Set the model file and class names, then load the model
-        model_filename = 'lstm_one_hot_encoded_90dayswindow_0.4363valloss_06_07_2020_03_28.pth'
+        model_filename = 'lstm_one_hot_encoded_90dayswindow_0.5125valloss_08_07_2020_04_41.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
         if test_mode == 'aggregate':
-            model_filename2 = 'lstm_one_hot_encoded_90dayswindow_0.5125valloss_08_07_2020_04_41.pth'
+            model_filename2 = 'lstm_one_hot_encoded_90dayswindow_0.4363valloss_06_07_2020_03_28.pth'
             model_filename3 = 'lstm_one_hot_encoded_90dayswindow_0.5232valloss_08_07_2020_04_44.pth'
             model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
             model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
             # Set the secondary random seed
-            random_seed_2 = 100
+            random_seed_2 = 42
             random_seed_3 = 0
         # Set the main random seed
-        random_seed_1 = 42
+        random_seed_1 = 100
         # Set the use of an embedding layer
         dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
@@ -315,19 +316,19 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         ml_core = 'deep learning'
     elif model_name == 'Bidirectional RNN with embedding layer and delta_ts':
         # Set the model file and class names, then load the model
-        model_filename = 'rnn_bidir_pre_embedded_delta_ts_90dayswindow_0.3059valloss_06_07_2020_03_10.pth'
+        model_filename = 'rnn_bidir_pre_embedded_delta_ts_90dayswindow_0.3579valloss_08_07_2020_03_55.pth'
         model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
         if test_mode == 'aggregate':
-            model_filename2 = 'rnn_bidir_pre_embedded_delta_ts_90dayswindow_0.3579valloss_08_07_2020_03_55.pth'
+            model_filename2 = 'rnn_bidir_pre_embedded_delta_ts_90dayswindow_0.3059valloss_06_07_2020_03_10.pth'
             model_filename3 = 'rnn_bidir_pre_embedded_delta_ts_90dayswindow_0.4249valloss_08_07_2020_03_49.pth'
             model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
             model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
             # Set the secondary random seed
-            random_seed_2 = 100
+            random_seed_2 = 42
             random_seed_3 = 0
         # Set the main random seed
-        random_seed_1 = 42
+        random_seed_1 = 100
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
@@ -407,19 +408,19 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         ml_core = 'deep learning'
     elif model_name == 'RNN with embedding layer and delta_ts':
         # Set the model file and class names, then load the model
-        model_filename = 'rnn_pre_embedded_delta_ts_90dayswindow_0.5602valloss_06_07_2020_02_50.pth'
+        model_filename = 'rnn_pre_embedded_delta_ts_90dayswindow_0.5267valloss_21_08_2020_04_19.pth'
         model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
         if test_mode == 'aggregate':
-            model_filename2 = 'rnn_pre_embedded_delta_ts_90dayswindow_0.5267valloss_21_08_2020_04_19.pth'
+            model_filename2 = 'rnn_pre_embedded_delta_ts_90dayswindow_0.5602valloss_06_07_2020_02_50.pth'
             model_filename3 = 'rnn_pre_embedded_delta_ts_90dayswindow_0.5393valloss_21_08_2020_04_15.pth'
             model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
             model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
             # Set the secondary random seed
-            random_seed_2 = 0
+            random_seed_2 = 42
             random_seed_3 = 100
         # Set the main random seed
-        random_seed_1 = 42
+        random_seed_1 = 0
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
@@ -430,19 +431,19 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         ml_core = 'deep learning'
     elif model_name == 'RNN with embedding layer':
         # Set the model file and class names, then load the model
-        model_filename = 'rnn_with_embedding_90dayswindow_0.5569valloss_30_06_2020_17_04.pth'
+        model_filename = 'rnn_pre_embedded_90dayswindow_0.5238valloss_21_08_2020_04_39.pth'
         model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
         if test_mode == 'aggregate':
-            model_filename2 = 'rnn_pre_embedded_90dayswindow_0.5238valloss_21_08_2020_04_39.pth'
+            model_filename2 = 'rnn_with_embedding_90dayswindow_0.5569valloss_30_06_2020_17_04.pth'
             model_filename3 = 'rnn_pre_embedded_90dayswindow_0.5335valloss_21_08_2020_04_41.pth'
             model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
             model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
             # Set the secondary random seed
-            random_seed_2 = 0
+            random_seed_2 = 42
             random_seed_3 = 100
         # Set the main random seed
-        random_seed_1 = 42
+        random_seed_1 = 0
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
@@ -453,19 +454,19 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         ml_core = 'deep learning'
     elif model_name == 'RNN with delta_ts':
         # Set the model file and class names, then load the model
-        model_filename = 'rnn_one_hot_encoded_delta_ts_90dayswindow_0.4275valloss_06_07_2020_02_55.pth'
+        model_filename = 'rnn_one_hot_encoded_delta_ts_90dayswindow_0.5354valloss_21_08_2020_04_24.pth'
         model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
         if test_mode == 'aggregate':
-            model_filename2 = 'rnn_one_hot_encoded_delta_ts_90dayswindow_0.5354valloss_21_08_2020_04_24.pth'
+            model_filename2 = 'rnn_one_hot_encoded_delta_ts_90dayswindow_0.4275valloss_06_07_2020_02_55.pth'
             model_filename3 = 'rnn_one_hot_encoded_delta_ts_90dayswindow_0.5364valloss_21_08_2020_04_28.pth'
             model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
             model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
             # Set the secondary random seed
-            random_seed_2 = 0
+            random_seed_2 = 42
             random_seed_3 = 100
         # Set the main random seed
-        random_seed_1 = 42
+        random_seed_1 = 0
         # Set the use of an embedding layer
         dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
@@ -476,19 +477,19 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         ml_core = 'deep learning'
     elif model_name == 'RNN':
         # Set the model file and class names, then load the model
-        model_filename = 'rnn_one_hot_encoded_90dayswindow_0.5497valloss_30_06_2020_18_25.pth'
+        model_filename = 'rnn_one_hot_encoded_90dayswindow_0.5445valloss_21_08_2020_04_34.pth'
         model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
         if test_mode == 'aggregate':
-            model_filename2 = 'rnn_one_hot_encoded_90dayswindow_0.5445valloss_21_08_2020_04_34.pth'
+            model_filename2 = 'rnn_one_hot_encoded_90dayswindow_0.5497valloss_30_06_2020_18_25.pth'
             model_filename3 = 'rnn_one_hot_encoded_90dayswindow_0.5409valloss_21_08_2020_04_30.pth'
             model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
             model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
             # Set the secondary random seed
-            random_seed_2 = 0
+            random_seed_2 = 42
             random_seed_3 = 100
         # Set the main random seed
-        random_seed_1 = 42
+        random_seed_1 = 0
         # Set the use of an embedding layer
         dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
@@ -591,12 +592,12 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         ml_core = 'deep learning'
     elif model_name == 'TLSTM with embedding layer':
         # Set the model file and class names, then load the model
-        model_filename = 'tlstm_pre_embedded_90dayswindow_0.6503valloss_07_07_2020_03_03'
+        model_filename = 'tlstm_pre_embedded_90dayswindow_0.6503valloss_07_07_2020_03_03.pth'
         model_class = 'TLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
         if test_mode == 'aggregate':
             model_filename2 = 'tlstm_pre_embedded_90dayswindow_0.6173valloss_21_08_2020_15_12.pth'
-            model_filename3 = 'tlstm_pre_embedded_90dayswindow_0.6402valloss_21_08_2020_15_19'
+            model_filename3 = 'tlstm_pre_embedded_90dayswindow_0.6402valloss_21_08_2020_15_19.pth'
             model2 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename2}', getattr(Models, model_class))
             model3 = du.deep_learning.load_checkpoint(f'{models_path}{model_filename3}', getattr(Models, model_class))
             # Set the secondary random seed
@@ -614,7 +615,7 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         ml_core = 'deep learning'
     elif model_name == 'TLSTM':
         # Set the model file and class names, then load the model
-        model_filename = 'tlstm_one_hot_encoded_90dayswindow_0.6153valloss_07_07_2020_03_13'
+        model_filename = 'tlstm_one_hot_encoded_90dayswindow_0.6153valloss_07_07_2020_03_13.pth'
         model_class = 'TLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
         if test_mode == 'aggregate':

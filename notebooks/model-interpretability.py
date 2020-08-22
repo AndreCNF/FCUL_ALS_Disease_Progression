@@ -105,13 +105,12 @@ batch_size = 32                            # Number of unit stays in a mini batc
 model_filename = None                      # Name of the file containing the model that will be loaded
 model_class = None                         # Python class name that corresponds to the chosen model's type
 model = None                               # Machine learning model object
-model2 = None                              # Other machine learning model object
-model3 = None                              # Other machine learning model object
 dataset_mode = 'one hot encoded'           # The mode in which we'll use the data, either one hot encoded or pre-embedded
 ml_core = 'deep learning'                  # The core machine learning type we'll use; either traditional ML or DL
 use_delta_ts = False                       # Indicates if we'll use time variation info
 time_window_days = 90                      # Number of days on which we want to predict NIV
 is_custom = False                          # Indicates if the model being used is a custom built one
+random_seed = None                         # Model random seed
 @interact
 def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and delta_ts',
                                  'Bidirectional LSTM with embedding layer',
@@ -129,23 +128,29 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
                                  'RNN with embedding layer',
                                  'RNN with delta_ts',
                                  'RNN',
+                                 'MF1-LSTM with embedding layer',
                                  'MF1-LSTM',
+                                 'MF2-LSTM with embedding layer',
                                  'MF2-LSTM',
+                                 'TLSTM with embedding layer',
                                  'TLSTM',
                                  'XGBoost',
-                                 'Logistic regression']):
-    global model_filename, model_class, model, model2, model3, dataset_mode, ml_core, use_delta_ts 
-    global time_window_days, is_custom
+                                 'Logistic regression',
+                                 'SVM']):
+    global model_filename, model_class, model, dataset_mode, ml_core, use_delta_ts 
+    global time_window_days, is_custom, random_seed
     if model_name == 'Bidirectional LSTM with embedding layer and delta_ts':
         # Set the model file and class names, then load the model
         model_filename = 'lstm_bidir_pre_embedded_delta_ts_90dayswindow_0.3705valloss_08_07_2020_04_04.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 0
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
@@ -154,24 +159,28 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         model_filename = 'lstm_bidir_pre_embedded_90dayswindow_0.2490valloss_06_07_2020_03_47.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 42
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
         use_delta_ts = False
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'Bidirectional LSTM with delta_ts':
         # Set the model file and class names, then load the model
-        model_filename = 'lstm_bidir_one_hot_encoded_delta_ts_90dayswindow_0.3809valloss_06_07_2020_04_08.pth'
+        model_filename = 'lstm_bidir_one_hot_encoded_delta_ts_90dayswindow_0.3784valloss_08_07_2020_04_14.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 0
         # Set the use of an embedding layer
         dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
@@ -180,24 +189,28 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         model_filename = 'lstm_bidir_one_hot_encoded_90dayswindow_0.4497valloss_08_07_2020_04_31.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 0
         # Set the use of an embedding layer
         dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
         use_delta_ts = False
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'LSTM with embedding layer and delta_ts':
         # Set the model file and class names, then load the model
-        model_filename = 'lstm_pre_embedded_delta_ts_90dayswindow_0.4771valloss_06_07_2020_03_55.pth'
+        model_filename = 'lstm_pre_embedded_delta_ts_90dayswindow_0.5071valloss_21_08_2020_05_03.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 100
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
@@ -206,11 +219,13 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         model_filename = 'lstm_pre_embedded_90dayswindow_0.5898valloss_06_07_2020_03_21.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 42
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
         use_delta_ts = False
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
@@ -219,37 +234,43 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         model_filename = 'lstm_one_hot_encoded_delta_ts_90dayswindow_0.5178valloss_06_07_2020_04_02.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 42
         # Set the use of an embedding layer
         dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'LSTM':
         # Set the model file and class names, then load the model
-        model_filename = 'lstm_one_hot_encoded_90dayswindow_0.4363valloss_06_07_2020_03_28.pth'
+        model_filename = 'lstm_one_hot_encoded_90dayswindow_0.5125valloss_08_07_2020_04_41.pth'
         model_class = 'VanillaLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 100
         # Set the use of an embedding layer
         dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
         use_delta_ts = False
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'Bidirectional RNN with embedding layer and delta_ts':
         # Set the model file and class names, then load the model
-        model_filename = 'rnn_bidir_pre_embedded_delta_ts_90dayswindow_0.3059valloss_06_07_2020_03_10.pth'
+        model_filename = 'rnn_bidir_pre_embedded_delta_ts_90dayswindow_0.3579valloss_08_07_2020_03_55.pth'
         model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 100
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
@@ -258,11 +279,13 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         model_filename = 'rnn_bidir_pre_embedded_90dayswindow_0.4005valloss_08_07_2020_03_43.pth'
         model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 0
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
         use_delta_ts = False
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
@@ -271,11 +294,13 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         model_filename = 'rnn_bidir_one_hot_encoded_delta_ts_90dayswindow_0.3631valloss_08_07_2020_04_21.pth'
         model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 100
         # Set the use of an embedding layer
         dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
@@ -284,64 +309,89 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         model_filename = 'rnn_bidir_one_hot_encoded_90dayswindow_0.3713valloss_08_07_2020_04_49.pth'
         model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 100
         # Set the use of an embedding layer
         dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
         use_delta_ts = False
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'RNN with embedding layer and delta_ts':
         # Set the model file and class names, then load the model
-        model_filename = 'rnn_pre_embedded_delta_ts_30dayswindow_0.4746valloss_29_06_2020_17_30.pth'
+        model_filename = 'rnn_pre_embedded_delta_ts_90dayswindow_0.5267valloss_21_08_2020_04_19.pth'
         model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 0
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'RNN with embedding layer':
         # Set the model file and class names, then load the model
-        model_filename = 'rnn_with_embedding_90dayswindow_0.5569valloss_30_06_2020_17_04.pth'
+        model_filename = 'rnn_pre_embedded_90dayswindow_0.5238valloss_21_08_2020_04_39.pth'
         model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 0
         # Set the use of an embedding layer
         dataset_mode = 'pre-embedded'
         # Set the use of delta_ts
         use_delta_ts = False
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'RNN with delta_ts':
         # Set the model file and class names, then load the model
-        model_filename = 'rnn_one_hot_encoded_delta_ts_90dayswindow_0.4275valloss_06_07_2020_02_55.pth'
+        model_filename = 'rnn_one_hot_encoded_delta_ts_90dayswindow_0.5354valloss_21_08_2020_04_24.pth'
         model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 0
         # Set the use of an embedding layer
         dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'RNN':
         # Set the model file and class names, then load the model
-        model_filename = 'rnn_one_hot_encoded_90dayswindow_0.5497valloss_30_06_2020_18_25.pth'
+        model_filename = 'rnn_one_hot_encoded_90dayswindow_0.5445valloss_21_08_2020_04_34.pth'
         model_class = 'VanillaRNN'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 0
         # Set the use of an embedding layer
         dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
         use_delta_ts = False
-        # Set it as a custom model
+        # Set it as not a custom model
         is_custom = False
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'MF1-LSTM with embedding layer':
+        # Set the model file and class names, then load the model
+        model_filename = 'mf1lstm_pre_embedded_90dayswindow_0.6516valloss_07_07_2020_03_35.pth'
+        model_class = 'MF1LSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 42
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = False
+        # Set it as a custom model
+        is_custom = True
         # Set as a traditional ML model
         ml_core = 'deep learning'
     elif model_name == 'MF1-LSTM':
@@ -349,28 +399,70 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         model_filename = 'mf1lstm_one_hot_encoded_90dayswindow_0.6009valloss_07_07_2020_03_46.pth'
         model_class = 'MF1LSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 42
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
         # Set it as a custom model
         is_custom = True
         # Set as a traditional ML model
         ml_core = 'deep learning'
-    elif model_name == 'MF2-LSTM':
+    elif model_name == 'MF2-LSTM with embedding layer':
         # Set the model file and class names, then load the model
-        model_filename = ''
+        model_filename = 'mf2lstm_pre_embedded_90dayswindow_0.6388valloss_07_07_2020_03_54.pth'
         model_class = 'MF2LSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 42
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = False
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'MF2-LSTM':
+        # Set the model file and class names, then load the model
+        model_filename = 'mf2lstm_one_hot_encoded_90dayswindow_0.5918valloss_07_07_2020_03_58.pth'
+        model_class = 'MF2LSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 42
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
         use_delta_ts = 'raw'
         # Set it as a custom model
         is_custom = True
         # Set as a traditional ML model
         ml_core = 'deep learning'
-    elif model_name == 'TLSTM':
+    elif model_name == 'TLSTM with embedding layer':
         # Set the model file and class names, then load the model
-        model_filename = ''
+        model_filename = 'tlstm_pre_embedded_90dayswindow_0.6503valloss_07_07_2020_03_03.pth'
         model_class = 'TLSTM'
         model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 42
+        # Set the use of an embedding layer
+        dataset_mode = 'pre-embedded'
+        # Set the use of delta_ts
+        use_delta_ts = False
+        # Set it as a custom model
+        is_custom = True
+        # Set as a traditional ML model
+        ml_core = 'deep learning'
+    elif model_name == 'TLSTM':
+        # Set the model file and class names, then load the model
+        model_filename = 'tlstm_one_hot_encoded_90dayswindow_0.6153valloss_07_07_2020_03_13.pth'
+        model_class = 'TLSTM'
+        model = du.deep_learning.load_checkpoint(f'{models_path}{model_filename}', getattr(Models, model_class))
+        # Set the main random seed
+        random_seed = 42
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
         # Set the use of delta_ts
         use_delta_ts = 'normalized'
         # Set it as a custom model
@@ -383,13 +475,37 @@ def get_dataset_mode(model_name=['Bidirectional LSTM with embedding layer and de
         model_class = 'XGBoost'
         model = xgb.XGBClassifier()
         model.load_model(f'{models_path}{model_filename}')
+        # Set the main random seed
+        random_seed = 42
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
+        # Set the use of delta_ts
+        use_delta_ts = False
         # Set as a traditional ML model
         ml_core = 'machine learning'
     elif model_name == 'Logistic regression':
         # Set the model file and class names, then load the model
         model_filename = 'logreg_0.6210valloss_09_07_2020_02_54.pth'
-        model_class = 'logreg'
+        model_class = 'LogReg'
         model = joblib.load(f'{models_path}{model_filename}')
+        # Set the main random seed
+        random_seed = 42
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
+        # Set the use of delta_ts
+        use_delta_ts = False
+        # Set as a traditional ML model
+        ml_core = 'machine learning'
+    elif model_name == 'SVM':
+        # Set the model file and class names, then load the model
+        model_filename = 'svm_0.9078valloss_09_07_2020_02_55.pth'
+        model_class = 'SVM'
+        model = joblib.load(f'{models_path}{model_filename}')
+        random_seed = 42
+        # Set the use of an embedding layer
+        dataset_mode = 'one hot encoded'
+        # Set the use of delta_ts
+        use_delta_ts = False
         # Set as a traditional ML model
         ml_core = 'machine learning'
     print(model)
@@ -522,6 +638,10 @@ dataset = du.datasets.Time_Series_Dataset(ALS_df, data, padding_value=padding_va
 dataset.__len__()
 
 # ## Separating into train and validation sets
+
+# Set the random seed for reproducibility:
+
+du.set_random_seed(random_seed)
 
 (train_dataloader, val_dataloader, test_dataloader,
 train_indeces, val_indeces, test_indeces) = du.machine_learning.create_train_sets(dataset,
