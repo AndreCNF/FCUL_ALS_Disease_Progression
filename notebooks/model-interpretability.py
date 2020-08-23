@@ -934,6 +934,6 @@ data_n_shap_df.head()
 data_n_shap_file_name = f'fcul_als_with_shap_for_{model_filename.split(".pth")[0]}'
 data_n_shap_file_name
 
-data_n_shap_df.to_csv(f'{data_n_shap_path}fcul_als_with_shap_for_{model_filename}.csv')
+data_n_shap_df.to_csv(f'{data_n_shap_path}{data_n_shap_file_name}.csv')
 
 

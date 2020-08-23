@@ -8,6 +8,7 @@
 
 import os                                  # os handles directory/workspace changes
 import yaml                                # Save and load YAML files
+import plotly.graph_objs as go             # Plotly for interactive and pretty plots
 
 import pixiedust                           # Debugging in Jupyter Notebook cells
 
@@ -84,6 +85,10 @@ for file_name in metrics_files:
 
 metrics
 
+# ## Creating the tables
+
+# ### Performance metrics
+
 # Convert to a dataframe:
 
 metrics_df = pd.DataFrame(metrics)
@@ -94,11 +99,113 @@ metrics_df
 metrics_df = metrics_df.transpose()
 metrics_df
 
+# Sort by a descending order of performance:
+
 metrics_df = metrics_df.sort_values('Avg. Test AUC', ascending=False)
 metrics_df
 
 # Convert to a LaTeX table:
 
 metrics_df.to_latex()
+
+# ### Component impact
+#
+# Measuring the average gain in performance that we get from the components of bidirectionality, embedding layer and time awareness.
+
+model_names = list(metrics_df.index)
+model_names
+
+component_gains = dict()
+components_str = dict(bidirectionality='Bidirectional ', 
+                      embedding=', embedded', 
+                      time_awareness=', time aware')
+for component in components_str.keys():
+    # Find and match the names of the models with and without the component
+    models_without_comp = [model_name.replace(components_str[component], '') 
+                           for model_name in model_names 
+                           if components_str[component] in model_name]
+    models_with_comp = [model_name 
+                        for model_name in model_names 
+                        if components_str[component] in model_name]
+    model_comp_names_match = dict(zip(models_without_comp, models_with_comp))
+    curr_component_gains = list()
+    for model_name in models_without_comp:
+        # Calculate the difference in model performance with and without the component
+        component_gain = (metrics_df.loc[model_comp_names_match[model_name], 'Avg. Test AUC'] 
+                          - metrics_df.loc[model_name, 'Avg. Test AUC'])
+        curr_component_gains.append(component_gain)
+    # Average the component's effect
+    component_gains[component] = sum(curr_component_gains) / len(curr_component_gains)
+component_gains
+
+# Find and match the names of the models with LSTM and with RNN
+models_with_lstm = [model_name.replace('RNN', 'LSTM')
+                    for model_name in model_names 
+                    if 'RNN' in model_name]
+models_with_rnn = [model_name 
+                   for model_name in model_names 
+                   if 'RNN' in model_name]
+model_comp_names_match = dict(zip(models_with_rnn, models_with_lstm))
+curr_component_gains = list()
+for model_name in models_with_rnn:
+    # Calculate the difference in model performance with LSTM and with RNN
+    component_gain = (metrics_df.loc[model_comp_names_match[model_name], 'Avg. Test AUC'] 
+                      - metrics_df.loc[model_name, 'Avg. Test AUC'])
+    curr_component_gains.append(component_gain)
+# Average LSTM's effect
+component_gains['LSTM'] = sum(curr_component_gains) / len(curr_component_gains)
+component_gains
+
+# Convert to a dataframe:
+
+gain_df = pd.Series(component_gains, name='Avg. Impact on Test AUC')
+gain_df
+
+gain_df.index = ['Bidirectionality', 'Embedding', 'Time Awareness', 'LSTM']
+gain_df
+
+gain_df.index.rename('Component')
+gain_df
+
+# Sort by a descending order of performance gain:
+
+gain_df = gain_df.sort_values(ascending=False)
+gain_df
+
+# Convert to a LaTeX table:
+
+gain_df.to_latex()
+
+# Make a bar plot, similar to SHAP's summary plot:
+
+gain_plot_df = gain_df.copy()
+gain_plot_df = gain_plot_df.sort_values(ascending=True)
+# Define the colors based on the value
+marker_color = ['rgba(255,13,87,1)' 
+                if gain_plot_df[comp] > 0
+                else 'rgba(30,136,229,1)'
+                for comp in gain_plot_df.index ]
+# Create the figure
+figure=dict(
+    data=[dict(
+        type='bar',
+        x=gain_plot_df,
+        y=gain_plot_df.index,
+        orientation='h',
+        marker=dict(color=marker_color)
+    )],
+    layout=dict(
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+        title='Average impact on model\'s test AUC',
+        yaxis_title=gain_plot_df.index.name,
+        font=dict(
+            family='Roboto',
+            size=14,
+            color='black'
+        )
+    )
+)
+go.Figure(figure)
 
 
